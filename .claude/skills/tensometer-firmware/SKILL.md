@@ -9,7 +9,7 @@ Use this for ANY firmware work on the tensometer: new modules, edits, reviews, d
 
 Revision 3 (2026-10-14). Rev 2: design review applied (ENA polarity and reset-safe pulls, continuity ranges and separate excitation, DMA ADC, HX711 timestamping, per-segment break peaks, both-break rule, coupler/profile coupling, no encoder with software slip check, heartbeat 1 s, non-blocking SD and OLED, two-wire Bode). Rev 3: phased build. Phase 1 = stress-strain core only. Continuity and routing (impedance) are optional plug-in modules added later without changing core files.
 
-**Revision 4 (2026-10-14): drive hardware corrected.** Revs 1 to 3 were written from an outdated handover that listed an MG10 10:1 gearbox, a DM542 driver and 36 V. The real parts are a **DTGN PX57 5:1 planetary gearbox**, a **TB6600 driver board** and a **24 V** supply. Every derived drive number below was recomputed: 2000 steps/mm (was 4000), 6.35 kN per N.m at the nut (was 12.7), 16.7 kHz at 500 mm/min (was 33 kHz), driver-minimum force ~0.9 to 1.3 kN (was ~3.7 kN). Source of truth for mechanical facts: `docs/handover.md` (the `claude/tensometer_project_context.md` version).
+**Revision 4 (2026-10-14): drive hardware corrected.** Revs 1 to 3 were written from an outdated handover that listed an MG10 10:1 gearbox, a DM542 driver and 36 V. The real parts are a **DTGN PX57 5:1 planetary gearbox**, a **TB6600 driver board** and a **24 V** supply. Every derived drive number below was recomputed: 2000 steps/mm (was 4000), 6.35 kN per N.m at the nut (was 12.7), 16.7 kHz at 500 mm/min (was 33 kHz), driver-minimum force ~0.9 to 1.3 kN (was ~3.7 kN). Source of truth for mechanical facts: `docs/handover.md` in the repo (the `claude/tensometer_project_context.md` project doc). The repo copy of this skill (`.claude/skills/tensometer-firmware/SKILL.md`) is kept identical.
 
 ## 0. How to work
 
@@ -377,9 +377,9 @@ firmware/
   src/core/     main.cpp  stepper.cpp  hx711.cpp  safety.cpp  state_machine.cpp
                 comms.cpp  sdlog.cpp  panel.cpp  oled.cpp  modules.cpp
   src/modules/  continuity/  routing/  sim_continuity/
-  lib/          crc16/  cobs/  break_detect/  continuity_logic/  motion_profile/
+  lib/          crc16/  cobs/  frame/  break_detect/  continuity_logic/  motion_profile/
                 slip_check/  config_sections/
-  test/         test_crc16/  test_cobs/  test_break_detect/  test_continuity/
+  test/         test_crc16/  test_cobs/  test_frame/  test_break_detect/  test_continuity/
                 test_profile/  test_slip/  test_config_sections/  test_module_seam/
 ```
 
@@ -387,11 +387,11 @@ Pin library versions in `platformio.ini`.
 
 ## 13. Testing and bring-up
 
-Unit tests (native, Unity): CRC vectors; COBS round trips with zeros; break classifier on synthetic traces (thick-wire break, thin-wire break, fabric tearing through wire, gradual tear, slip saw-tooth, substrate break, noise, multi-cycle with Mullins softening, resume after relaxation), **each run with and without conductor events**; continuity open/reclose/degrade; profile timing; slip check; config sections (missing, unknown, module absent); **module seam test with sim_continuity**.
+Unit tests (native, Unity): CRC vectors; COBS round trips with zeros; frame encode/decode and corruption rejection; break classifier on synthetic traces (thick-wire break, thin-wire break, fabric tearing through wire, gradual tear, slip saw-tooth, substrate break, noise, multi-cycle with Mullins softening, resume after relaxation), **each run with and without conductor events**; continuity open/reclose/degrade; profile timing; slip check; config sections (missing, unknown, module absent); **module seam test with sim_continuity**.
 
 Phase 1 bench bring-up (each step passes before the next):
 1. Logic only, no driver power: pins, panel, limits and e-stop (with RC), watchdog, protocol, HELLO capability = core only.
-2. Reset safety: driver powered, motor disconnected. Hold the Teensy in reset, then unplug it: driver stays disabled, no STEP edges. Confirm ENA polarity against the manual.
+2. Reset safety: driver powered, motor disconnected. Hold the Teensy in reset, then unplug it: driver stays disabled, no STEP edges. Confirm ENA polarity on the TB6600.
 3. Driver timing at the opto output side (scope across the TB6600 opto): pulse and off-time clean at 20 kHz with the 5 us pulse, DIR setup >= 5 us. Identify the opto part. Only then consider raising the cap or shortening the pulse.
 4. Motor, no specimen, low current: direction, steps/mm against a dial gauge, homing and force guard, limits; watch limit and e-stop inputs for noise with the motor running.
 5. HX711 noise floor on its own LDO, hanging-mass calibration, polarity, timestamp jitter.
