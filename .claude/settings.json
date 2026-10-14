@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(pio run -t upload*)",
+      "Bash(pio run --target upload*)",
+      "Bash(platformio run -t upload*)",
+      "Bash(platformio run --target upload*)",
+      "Bash(teensy_loader_cli *)",
+      "Bash(tycmd *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/block-flash.sh\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -57,7 +57,7 @@ public:
     uint32_t overflow_count() const { return overflows_; }
 
 private:
-    uint8_t buf_[MAX_WIRE_LEN];
+    uint8_t buf_[MAX_WIRE_LEN] = {};
     size_t len_ = 0;
     size_t frame_len_ = 0;
     bool discarding_ = false;

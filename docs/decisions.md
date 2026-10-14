@@ -4,6 +4,9 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-10-14
 
+### Agent guard rails and stricter CI
+Flash-blocking hook plus permission deny rules; `firmware-reviewer` subagent for independent review; CI adds cppcheck, `-Werror` on project sources, and a memory budget (RAM1 >= 64 kB, RAM2 >= 256 kB free). Teensy envs set `test_ignore = *` so `pio test` can never upload. **Approved.**
+
 ### Drive hardware corrected (skill rev 4)
 Skill revs 1 to 3 used an outdated handover (MG10 10:1, DM542, 36 V). Real parts: DTGN PX57 5:1, TB6600, 24 V. Derived numbers recomputed: 2000 steps/mm, 6.35 kN/N.m at the nut, 16.7 kHz at 500 mm/min, driver-minimum force ~0.9 to 1.3 kN. Step-rate cap set to 20 kHz and step pulse to 5 us until the TB6600 opto is identified. **Approved by Mathew:** pending (correction, not a new choice).
 
