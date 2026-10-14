@@ -36,7 +36,17 @@ CI (`.github/workflows/firmware.yml`) runs on every push: the hook self-test, cp
 - Record new decisions in `docs/decisions.md` (dated, with status).
 - Commits: small and descriptive. Do not rewrite history on `main`.
 
+## Work queue and memory between sessions
+
+Sessions don't remember each other. The repo is the only memory: if it isn't written here, it didn't happen.
+
+- **GitHub issues are the work queue.** At the start of a session with no specific task, list open issues (`gh api repos/Mathewimanuel/tensometer/issues`; GraphQL is unavailable in some sessions, so prefer the REST API). Labels: `decision` (needs Mathew, never decide it yourself), `hardware` (needs a measurement on the real parts), `firmware`, `tooling`, `phase-2`, `blocked`.
+- Never start an issue labelled `blocked` or `decision`. When a blocking issue closes, remove `blocked` from the issues it unblocks.
+- When Mathew reports a measurement or a decision: record it in `docs/decisions.md` (dated), update the skill and `config.h`/`limits.h` where it applies, close the issue with a comment linking the commit.
+- Reference issues in commits (`Closes #3`) so the history explains itself.
+- **The firmware skill has two copies:** this repo (master) and Mathew's claude.ai skills. If you change `.claude/skills/tensometer-firmware/SKILL.md`, say so clearly in your final message so Mathew can update the claude.ai copy.
+
 ## Current status (2026-10-14)
 
 - Done: repo skeleton, config/limits/protocol/module headers, safe-boot `main.cpp`, `crc16`, `cobs` and `frame` libraries with native tests, CI with static analysis and memory budget, flash-blocking hook, reviewer subagent.
-- Next: motion module design (state machine edge cases, planner), pending approval of the two PROPOSED items in `docs/decisions.md`.
+- Next: see open GitHub issues. Unblocked firmware work: #13 (break detection), #12 (protocol bodies). Motion (#9) waits on decision #1; HX711 driver (#10) waits on decision #2.
