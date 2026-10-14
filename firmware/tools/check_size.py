@@ -46,6 +46,7 @@ def main() -> int:
         need = MIN_FREE[region]
         status = "OK" if free >= need else "OVER BUDGET"
         print(f"{region}: {free / 1024:.0f} kB free (budget >= {need / 1024:.0f} kB) {status}")
+        print(f"::notice title=memory {region}::{free / 1024:.0f} kB free, budget {need / 1024:.0f} kB")
         if free < need:
             print(f"::error::{region} headroom {free} B is below the {need} B budget")
             ok = False
