@@ -1,0 +1,8 @@
+# Shell scripts must keep LF endings, even on Windows checkouts (core.autocrlf=true).
+# A CRLF hook script fails in Git Bash, and the flash-blocking hook fails closed,
+# which would block every command in Claude Code.
+*.sh text eol=lf
+.claude/hooks/* text eol=lf
+
+# Everything else: let Git normalise.
+* text=auto
