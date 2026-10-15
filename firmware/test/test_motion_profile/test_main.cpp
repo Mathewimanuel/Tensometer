@@ -73,6 +73,24 @@ static void test_steps_to_stop_zero_rate_is_zero() {
     TEST_ASSERT_EQUAL_UINT32(0, motion::steps_to_stop(0, 2000));
 }
 
+static void test_steps_to_stop_zero_accel_does_not_divide_by_zero() {
+    // No deceleration capability: must not crash, and must report "can't be shown to
+    // stop in time" rather than 0 (which would wrongly claim it's already stopped).
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, motion::steps_to_stop(1000, 0));
+    TEST_ASSERT_EQUAL_UINT32(0, motion::steps_to_stop(0, 0));  // not moving: no distance needed
+}
+
+static void test_planner_with_zero_accel_stays_frozen_not_ub() {
+    const motion::Params params{1000, 0};  // misconfigured: no acceleration
+    motion::Planner planner;
+    // Must not crash (division by zero) and must not silently free-run: starting from
+    // rest with no ramp capability, the planner should simply never command motion.
+    for (int i = 0; i < 50; ++i) {
+        TEST_ASSERT_EQUAL_UINT32(0, planner.tick(1000, 500, params));
+    }
+    TEST_ASSERT_FALSE(planner.moving());
+}
+
 static void test_accelerates_monotonically_and_holds_cruise() {
     const motion::Params params{500, 1000};  // cruise 500 Hz, accel 1000 steps/s^2
     motion::Planner planner;
@@ -171,6 +189,8 @@ int main() {
     RUN_TEST(test_steps_to_stop_exact_division);
     RUN_TEST(test_steps_to_stop_rounds_up);
     RUN_TEST(test_steps_to_stop_zero_rate_is_zero);
+    RUN_TEST(test_steps_to_stop_zero_accel_does_not_divide_by_zero);
+    RUN_TEST(test_planner_with_zero_accel_stays_frozen_not_ub);
     RUN_TEST(test_accelerates_monotonically_and_holds_cruise);
     RUN_TEST(test_long_move_reaches_cruise_and_ends_exactly_on_target);
     RUN_TEST(test_short_move_is_triangular_and_ends_exactly_on_target);

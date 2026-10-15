@@ -446,3 +446,4 @@ Stall and coupler tests only on the 500 kg profile with a steel dummy.
 - Ramp acceleration for the motion planner: no moving-assembly inertia data exists yet, so no value is set anywhere; propose tuning conservatively at bench bring-up step 4 (section 13), not inventing a number now.
 - Homing fast-approach / slow-re-approach speed, and unloaded jog speed (= homing fast-approach, rev 5 decision): direction decided, mm/min value open.
 - Preload threshold force and approach speed (rev 5 decision: feature approved, values open pending HX711 noise-floor measurement).
+- `CMD_PRELOAD` (or equivalent) not yet added to `protocol.h`: the `PRELOAD` state (section 5) needs a way to be triggered from the PC/panel. Add it with a minor version bump when the message bodies are written (section 8); until then `PRELOAD` exists only as a `CoreState` value with no wire path to reach it.

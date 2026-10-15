@@ -24,13 +24,20 @@ namespace motion {
 constexpr uint32_t UNBOUNDED_STEPS = UINT32_MAX;
 
 struct Params {
-    uint32_t cruise_hz;       // target/cruise step rate. Must be > 0.
-    uint32_t accel_hz_per_s;  // ramp rate, steps/s^2, same for accel and decel. Must be > 0.
+    uint32_t cruise_hz;       // target/cruise step rate. Should be > 0.
+    uint32_t accel_hz_per_s;  // ramp rate, steps/s^2, same for accel and decel. Should be > 0:
+                              // a caller should never hand this a real move with accel == 0,
+                              // but 0 is handled safely (see steps_to_stop), not UB, since the
+                              // real acceleration constant is still open (skill 15) and this is
+                              // a plausible uninitialized/misconfigured value to arrive with.
 };
 
 // Steps needed to decelerate from rate_hz to a stop at accel_hz_per_s (d = v^2 / 2a),
 // rounded up: conservative, so a caller that starts decelerating at this distance never
-// finds out one tick later that it needed to start sooner. accel_hz_per_s must be > 0.
+// finds out one tick later that it needed to start sooner. accel_hz_per_s == 0 (no
+// deceleration capability) returns UINT32_MAX rather than dividing by zero; combined with
+// tick()'s own zero-accel handling, this freezes the planner at its current rate (0 if not
+// already moving) instead of crashing or free-running.
 uint32_t steps_to_stop(uint32_t rate_hz, uint32_t accel_hz_per_s);
 
 class Planner {

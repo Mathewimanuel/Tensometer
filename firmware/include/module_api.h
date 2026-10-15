@@ -8,8 +8,11 @@ namespace mod {
 
 enum class Status : uint8_t { OK = 0, ABSENT, ERROR };
 
+// Appended, not inserted: nothing serializes CoreState onto the wire yet, but a future
+// encoding may do static_cast<uint8_t>(state), and appending keeps every existing value
+// stable instead of silently shifting states added after it.
 enum class CoreState : uint8_t {
-    BOOT, IDLE, HOMING, JOG, TARE, PRELOAD, READY, RUN, HOLD, CYCLE, BREAK_HOLD, FAULT
+    BOOT, IDLE, HOMING, JOG, TARE, READY, RUN, HOLD, CYCLE, BREAK_HOLD, FAULT, PRELOAD
 };
 
 struct ConfigSection {

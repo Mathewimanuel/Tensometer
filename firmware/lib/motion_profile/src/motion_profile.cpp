@@ -24,6 +24,14 @@ uint32_t steps_to_stop(uint32_t rate_hz, uint32_t accel_hz_per_s) {
     if (rate_hz == 0) {
         return 0;
     }
+    if (accel_hz_per_s == 0) {
+        // No deceleration capability: can never be shown to have stopped in time, so
+        // report "as far as possible" rather than dividing by zero. tick() then always
+        // treats this as must_decelerate, and its own delta_hz for a zero accel is also
+        // 0, so a planner given accel_hz_per_s == 0 stays frozen at its current rate
+        // (0 if not yet moving) instead of crashing or silently free-running.
+        return UINT32_MAX;
+    }
     const uint64_t v2 = static_cast<uint64_t>(rate_hz) * rate_hz;
     const uint64_t denom = 2ull * accel_hz_per_s;
     const uint64_t d = (v2 + denom - 1) / denom;  // round up: never brake late
