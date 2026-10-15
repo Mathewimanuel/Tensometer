@@ -9,7 +9,7 @@ namespace mod {
 enum class Status : uint8_t { OK = 0, ABSENT, ERROR };
 
 enum class CoreState : uint8_t {
-    BOOT, IDLE, HOMING, JOG, TARE, READY, RUN, HOLD, CYCLE, BREAK_HOLD, FAULT
+    BOOT, IDLE, HOMING, JOG, TARE, PRELOAD, READY, RUN, HOLD, CYCLE, BREAK_HOLD, FAULT
 };
 
 struct ConfigSection {

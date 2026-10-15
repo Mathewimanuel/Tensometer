@@ -34,7 +34,17 @@ Fixed at 1/8. **Approved.** (With the 5:1 gearbox, 1/16 would only need 33 kHz a
 ### Toolchain and protocol
 PlatformIO; own timer-interrupt step generator; COBS + CRC-16/CCITT-FALSE over USB with an ASCII debug mode. **Approved.**
 
+## 2026-10-15
+
+### Motion rate update
+1 kHz velocity planner in the loop sets the step period; the step ISR holds `steps_remaining` (or runs open-ended for jog) and stops exactly on target. Per-step interval (AVR446) and phase-accumulator methods rejected. One planner serves all motion sources (test ramp, jog, preload, homing); the difference between them is only the stop condition (position reached / button released / force threshold / fault), reusing the existing `CONTROLLED` vs `IMMEDIATE` stop-type split (skill 3.4). **Approved.**
+
+### Jog and homing speeds (new constants, values open)
+Unloaded jog speed set equal to homing fast-approach speed (single shared constant). Both still need a concrete number — proposed starting point 200 mm/min fast/jog, 20 mm/min homing slow re-approach, `// TODO(verify)` pending bench tuning (skill 13, bring-up step 4). Loaded jog cap stays the already-decided 10 mm/min when \|force\| > 5% of profile cutoff. **Direction approved, exact values open.**
+
+### Auto-preload (new feature)
+Added as a **separate operator-triggered action**, not folded automatically into the ARM sequence. Reuses the homing-style force-guard pattern (creep at a slow speed, `CONTROLLED` stop when force reaches a threshold) rather than a new motion primitive. Needs: a new `PRELOAD` state (or sub-state) in the core state machine (skill 5), a threshold force and approach speed. **Direction approved (phase 1, separate action). Threshold force and speed still OPEN — pending HX711 noise-floor measurement (skill 13, bring-up step 5) and Mathew's numbers.** Candidate range discussed: ~1-3 N threshold (clear of HX711 noise floor on the 100 kg cell, well under the ~2.5-3 N break load of 36 AWG wire), slow creep ~5-10 mm/min.
+
 ## Proposed, awaiting approval
 
-- **Motion rate update:** 1 kHz velocity planner in the loop sets the step period; the step ISR holds `steps_remaining` and stops exactly on target. Per-step interval (AVR446) and phase-accumulator methods rejected.
 - **HX711 critical sections:** replace "every ISR < 20 us" with interrupts disabled only around each SCK-high phase (~1.5 us per bit), because USB and SDIO library ISRs cannot be guaranteed under 20 us.

@@ -11,6 +11,8 @@ Revision 3 (2026-10-14). Rev 2: design review applied (ENA polarity and reset-sa
 
 **Revision 4 (2026-10-14): drive hardware corrected.** Revs 1 to 3 were written from an outdated handover that listed an MG10 10:1 gearbox, a DM542 driver and 36 V. The real parts are a **DTGN PX57 5:1 planetary gearbox**, a **TB6600 driver board** and a **24 V** supply. Every derived drive number below was recomputed: 2000 steps/mm (was 4000), 6.35 kN per N.m at the nut (was 12.7), 16.7 kHz at 500 mm/min (was 33 kHz), driver-minimum force ~0.9 to 1.3 kN (was ~3.7 kN). Source of truth for mechanical facts: `docs/handover.md` in the repo (the `claude/tensometer_project_context.md` project doc). The repo copy of this skill (`.claude/skills/tensometer-firmware/SKILL.md`) is kept identical.
 
+**Revision 5 (2026-10-15): motion planner architecture and preload.** Motion rate-update method approved (section 3.4): one 1 kHz trapezoidal planner serves every motion source (test ramp, jog, homing, preload); sources differ only in what stop condition they hand the planner, reusing the existing `CONTROLLED`/`IMMEDIATE` stop-type split. New `PRELOAD` state added (section 5): a separate operator-triggered action, not folded into ARM, that reuses the homing-style force-guard pattern (creep at a slow speed, controlled stop when force reaches a threshold) rather than a new motion primitive. Jog (unloaded) speed is now defined as equal to the homing fast-approach speed (one shared constant) — direction decided, exact mm/min value still open. Preload threshold force and approach speed are open, pending an HX711 noise-floor measurement. See `docs/decisions.md` (2026-10-15) for the full discussion.
+
 ## 0. How to work
 
 - Act as a critical senior firmware reviewer. Name failure modes, check timing and margins, prefer correctness over agreement. Do not just agree; double check against this file and the physics.
@@ -69,6 +71,8 @@ Rules:
 ## 2. Hardware facts
 
 ### 2.1 Controller and drive (core)
+
+Stock Teensy 4.1 board specs (pin count, voltages, memory, peripherals) come from the manufacturer datasheet at `docs/datasheets/TEENSY41-L_DATASHEET-EN.pdf`; check it for anything about the bare board not covered below, rather than guessing. This project's own pin assignments stay in section 2.6, not the datasheet.
 
 | Item | Value |
 |---|---|
@@ -226,13 +230,17 @@ No step may block. Anything slow is split into slices.
 ### 3.4 Motion
 
 - Position truth = signed int32 step count; position in nm derived (steps x 500), never stored separately. `position_valid` cleared on boot, e-stop, slip-suspect fault, and any fault that may have moved the screw; RUN requires it set.
-- Trapezoidal profile: planner in the loop sets the commanded step rate; step ISR executes it. Rate-update method OPEN.
+- **Trapezoidal profile (approved, rev 5):** one 1 kHz planner (`lib/motion_profile`) serves every motion source (test ramp, jog, homing, preload). Each tick it is handed the steps remaining before the current target and recomputes the commanded step rate (accelerate / cruise / decelerate), which it writes for the step ISR to execute; the ISR holds `steps_remaining` as its own down-counter and stops exactly on target regardless of the commanded rate. The planner itself knows nothing about force, buttons or positions in mm — only step rates and step counts — so it does not change per motion source:
+  - **Position-target move** (test segment, homing slow re-approach, move-to-L0): caller feeds the real, shrinking distance to target.
+  - **Open-ended move** (jog, preload creep): caller feeds `UNBOUNDED_STEPS` until it decides to stop (button release, force threshold reached), then switches to feeding `steps_to_stop()` at the current rate so the planner decelerates cleanly from whatever speed it is at — this collapses an open-ended move into an ordinary position-target decel, with no special case in the planner.
+  - Short moves (target closer than the accel distance) naturally produce a triangular profile from the same per-tick logic; no separate case needed.
 - Direction change: velocity to zero, set DIR, wait >= 5 us, then step.
-- Stop types: `CONTROLLED` (decel ramp) for normal stops; `IMMEDIATE` for safety. Log both.
+- Stop types: `CONTROLLED` (decel ramp, via the planner above) for normal stops; `IMMEDIATE` (bypasses the planner, used only by the safety path) for faults. Log both.
 - Holding: motor stays enabled in HOLD, BREAK_HOLD and FAULT (unless e-stop).
-- Homing: only with |force| < 2 N. Abort with FAULT if |force| > 5 N during homing. Home to LIM_FAR: fast approach, back off, slow re-approach, set zero.
+- Homing: only with |force| < 2 N. Abort with FAULT if |force| > 5 N during homing. Home to LIM_FAR: fast approach, back off, slow re-approach, set zero. Fast-approach and slow-re-approach speeds: OPEN, no value set (section 15).
 - Gauge length: jaw gap at home is a calibrated constant in `config.h`. PC sends L0 in the config; firmware moves to L0 before ARM completes.
-- Jog speed capped at 10 mm/min whenever |force| > 5% of the profile cutoff.
+- Jog speed: unloaded jog speed = homing fast-approach speed (one shared constant, value OPEN). Loaded jog capped at 10 mm/min whenever |force| > 5% of the profile cutoff (unchanged).
+- **Preload (new, rev 5):** separate operator-triggered action (state `PRELOAD`, section 5), not automatic on ARM. Creeps at a slow approach speed in the extend direction and takes a `CONTROLLED` stop (via the open-ended-move pattern above) once force reaches a threshold; reuses the homing force-guard pattern rather than a new motion primitive. Threshold force and approach speed: OPEN, pending an HX711 noise-floor measurement (section 13 bring-up step 5); candidate range discussed in `docs/decisions.md` (2026-10-15) is ~1-3 N threshold, ~5-10 mm/min creep — not approved values, do not hard-code them.
 
 ### 3.5 Time base
 
@@ -267,7 +275,9 @@ Known margin (keep valid): force can rise ~120 N in one 12.5 ms HX711 period on 
 
 ## 5. State machine (core)
 
-States: `BOOT, IDLE, HOMING, JOG, TARE, READY, RUN, HOLD, CYCLE, BREAK_HOLD, FAULT`. (No BODE state: Bode = HOLD with the routing lock.)
+States: `BOOT, IDLE, HOMING, JOG, TARE, PRELOAD, READY, RUN, HOLD, CYCLE, BREAK_HOLD, FAULT`. (No BODE state: Bode = HOLD with the routing lock.)
+
+`PRELOAD` (rev 5): operator-triggered, not automatic on ARM (section 3.4). Available from IDLE or READY, homed and valid required (same precondition as JOG/TARE). Creeps in the extend direction at the (open) preload approach speed; a `CONTROLLED` stop on reaching the (open) preload force threshold returns to the state it was entered from. Any hard safety trip (section 4) wins as usual -> FAULT.
 
 | From | Event | To |
 |---|---|---|
@@ -275,6 +285,7 @@ States: `BOOT, IDLE, HOMING, JOG, TARE, READY, RUN, HOLD, CYCLE, BREAK_HOLD, FAU
 | IDLE | HOME (force guard ok) | HOMING -> IDLE (homed, valid) |
 | IDLE / READY | JOG (hold-to-run) | JOG -> back |
 | IDLE / READY | TARE | TARE -> back |
+| IDLE / READY (homed, valid) | PRELOAD | PRELOAD -> back (on threshold reached) |
 | IDLE (homed, valid) | ARM, all config sections valid, moved to L0 | READY |
 | READY | START | RUN or CYCLE |
 | RUN / CYCLE | hold point or PAUSE | HOLD (lock: PC) |
@@ -432,4 +443,6 @@ Stall and coupler tests only on the 500 kg profile with a steel dummy.
 - Continuity front-end schematic and phase 2 board connector pinout.
 - Guard interlock fitted or not.
 - Siglent AWG option (PC side).
-- Motion rate-update method (fixed-rate planner tick vs per-step interval).
+- Ramp acceleration for the motion planner: no moving-assembly inertia data exists yet, so no value is set anywhere; propose tuning conservatively at bench bring-up step 4 (section 13), not inventing a number now.
+- Homing fast-approach / slow-re-approach speed, and unloaded jog speed (= homing fast-approach, rev 5 decision): direction decided, mm/min value open.
+- Preload threshold force and approach speed (rev 5 decision: feature approved, values open pending HX711 noise-floor measurement).

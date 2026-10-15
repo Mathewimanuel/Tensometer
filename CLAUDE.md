@@ -7,6 +7,7 @@ Stepper-driven ball-screw tensile tester (Teensy 4.1 firmware, later a Python PC
 1. `.claude/skills/tensometer-firmware/SKILL.md` — hardware facts, architecture, safety rules, checklist. **Load it for any firmware work.** If code and skill disagree, stop and flag it.
 2. `docs/decisions.md` — what was decided, when, and what is still only PROPOSED.
 3. `docs/handover.md` — mechanical and project context. The drive is a **DTGN 5:1 gearbox + TB6600 on 24 V**. Anything mentioning MG10, DM542 or 36 V is outdated.
+4. `docs/datasheets/` — manufacturer datasheets. `TEENSY41-L_DATASHEET-EN.pdf` is the source for stock Teensy 4.1 board specs (pin counts, voltages, memory, peripherals). Project-specific pin assignments and hardware decisions still live in the skill (section 2.6), not here.
 
 ## How to work with Mathew
 
