@@ -31,10 +31,17 @@ bool StateMachine::apply(Event event, const Guards& guards) {
             // While arming (ARM accepted, move-to-L0 in flight), nothing else may run:
             // otherwise a later stray L0_REACHED from the now-irrelevant move would still
             // be accepted and jump to READY from wherever JOG/TARE/etc. left the carriage,
-            // silently breaking the "READY implies at L0" contract. Only L0_REACHED (or
-            // SAFETY_TRIP, handled above) may act while arming_ is true.
-            if (state_ == CoreState::IDLE && arming_ && event != Event::L0_REACHED) {
-                return false;
+            // silently breaking the "READY implies at L0" contract. Only L0_REACHED,
+            // ARM_CANCEL (operator changed their mind, no fault) or SAFETY_TRIP (handled
+            // above) may act while arming_ is true.
+            if (state_ == CoreState::IDLE && arming_) {
+                if (event == Event::ARM_CANCEL) {
+                    arming_ = false;  // caller stops the move-to-L0; state stays IDLE
+                    return true;
+                }
+                if (event != Event::L0_REACHED) {
+                    return false;
+                }
             }
 
             // JOG/TARE/PRELOAD share one precondition and one "return here" pattern

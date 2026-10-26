@@ -126,7 +126,7 @@ static void test_l0_reached_rejected_without_a_pending_arm() {
     TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);
 }
 
-static void test_arming_blocks_everything_but_l0_reached_and_safety_trip() {
+static void test_arming_blocks_everything_but_l0_reached_cancel_and_safety_trip() {
     StateMachine sm = booted();
     Guards g{};
     g.homed = true;
@@ -149,6 +149,35 @@ static void test_arming_blocks_everything_but_l0_reached_and_safety_trip() {
     TEST_ASSERT_TRUE(sm.apply(Event::L0_REACHED, g));
     TEST_ASSERT_FALSE(sm.arming());
     TEST_ASSERT_TRUE(sm.state() == CoreState::READY);
+}
+
+static void test_arm_cancel_backs_out_with_no_fault() {
+    StateMachine sm = booted();
+    Guards g{};
+    g.homed = true;
+    g.position_valid = true;
+    g.config_valid = true;
+    TEST_ASSERT_TRUE(sm.apply(Event::ARM, g));
+    TEST_ASSERT_TRUE(sm.arming());
+
+    TEST_ASSERT_TRUE(sm.apply(Event::ARM_CANCEL, g));
+    TEST_ASSERT_FALSE(sm.arming());
+    TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);  // no fault, just back where it started
+
+    // A stray L0_REACHED from the cancelled move must not sneak in afterwards.
+    TEST_ASSERT_FALSE(sm.apply(Event::L0_REACHED, g));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);
+
+    // A fresh ARM works normally afterwards.
+    TEST_ASSERT_TRUE(sm.apply(Event::ARM, g));
+    TEST_ASSERT_TRUE(sm.apply(Event::L0_REACHED, g));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::READY);
+}
+
+static void test_arm_cancel_rejected_without_a_pending_arm() {
+    StateMachine sm = booted();
+    TEST_ASSERT_FALSE(sm.apply(Event::ARM_CANCEL, {}));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);
 }
 
 static StateMachine ready() {
@@ -363,7 +392,9 @@ int main() {
     RUN_TEST(test_arm_rejected_without_full_guards);
     RUN_TEST(test_arm_then_l0_reached_reaches_ready);
     RUN_TEST(test_l0_reached_rejected_without_a_pending_arm);
-    RUN_TEST(test_arming_blocks_everything_but_l0_reached_and_safety_trip);
+    RUN_TEST(test_arming_blocks_everything_but_l0_reached_cancel_and_safety_trip);
+    RUN_TEST(test_arm_cancel_backs_out_with_no_fault);
+    RUN_TEST(test_arm_cancel_rejected_without_a_pending_arm);
     RUN_TEST(test_start_goes_to_run_or_cycle_per_guard);
     RUN_TEST(test_pause_from_run_locks_pc_and_resume_returns_to_run);
     RUN_TEST(test_pause_from_cycle_resume_returns_to_cycle);

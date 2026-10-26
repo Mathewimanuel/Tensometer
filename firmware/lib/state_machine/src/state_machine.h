@@ -10,19 +10,18 @@
 // L0; see a transition into FAULT, cut motion immediately. This matches the existing
 // module architecture instead of inventing a second, parallel command protocol.
 //
-// One remaining interpretive call, not fully pinned by the skill text -- flagged here and
-// in decisions.md:
-//   ARM's "moved to L0" step has no dedicated visible state in the 12-state list. Modeled
-//   here as an internal arming_ flag: ARM (guards pass) keeps state() at IDLE and sets
-//   arming() true; the caller starts the move-to-L0 and signals completion with
-//   Event::L0_REACHED, which is only accepted while arming() is true and advances
-//   IDLE -> READY. While arming_ is true, every other event is rejected except L0_REACHED
-//   and SAFETY_TRIP -- otherwise a stray/late L0_REACHED from a superseded move could land
-//   the machine in READY from wherever a later JOG/TARE/etc. left the carriage, breaking
-//   the "READY implies at L0" contract. There is currently no way to cancel a pending ARM
-//   other than SAFETY_TRIP; confirm with Mathew whether one is needed.
-//
 // Resolved by Mathew (2026-10-26, see decisions.md):
+//   - ARM's "moved to L0" step has no dedicated visible state in the 12-state list (L0 is
+//     the test's gauge length, sent by the PC in the config -- not the fixed home position).
+//     Approved: model it as an internal arming_ flag rather than a new wire state. ARM
+//     (guards pass) keeps state() at IDLE and sets arming() true; the caller starts the
+//     move-to-L0 and signals completion with Event::L0_REACHED, which is only accepted
+//     while arming() is true and advances IDLE -> READY. While arming_ is true, every other
+//     event is rejected except L0_REACHED, Event::ARM_CANCEL and SAFETY_TRIP -- otherwise a
+//     stray/late L0_REACHED from a superseded move could land the machine in READY from
+//     wherever a later JOG/TARE/etc. left the carriage, breaking the "READY implies at L0"
+//     contract. ARM_CANCEL lets the operator back out of a pending ARM with no fault (the
+//     caller stops the move-to-L0 motion itself); SAFETY_TRIP remains the hard-fault path.
 //   - "RUN / CYCLE | target reached / cycles done | HOLD then READY" is a real HOLD, not a
 //     direct jump to READY: Event::SEGMENT_DONE moves RUN/CYCLE -> HOLD (lock: PC) the same
 //     way PAUSE does, but sets the RESUME target to READY instead of RUN/CYCLE, so a
@@ -58,6 +57,8 @@ enum class Event : uint8_t {
     PRELOAD_START,   // IDLE/READY -> PRELOAD
     PRELOAD_DONE,    // PRELOAD -> the state it was entered from (threshold force reached)
     ARM,             // IDLE -> arming (see arming()); caller starts the move to L0
+    ARM_CANCEL,      // arming -> IDLE (arming() false). Operator backs out, no fault; the
+                      // caller stops the move-to-L0 itself. Rejected unless arming() is true.
     L0_REACHED,      // arming -> READY. Rejected unless arming() is true.
     START,           // READY -> RUN or CYCLE, per Guards::cycle_mode
     PAUSE,           // RUN/CYCLE -> HOLD (lock: PC). Covers both a scheduled hold point
