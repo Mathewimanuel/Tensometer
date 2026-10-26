@@ -12,8 +12,14 @@ namespace {
 // Drive the driver interface to its safe state before anything else runs.
 // ENA: LOW at the Teensy -> opto ON -> TB6600 DISABLED (skill 2.1; TODO(verify) polarity
 // on the bench). pinMode(OUTPUT) leaves the pin LOW, which is already the safe level;
-// the explicit write documents intent. The external pull-down on the buffer input
-// covers the time before this code runs.
+// the explicit write documents intent.
+//
+// SAFETY GAP (confirmed 2026-10-26, skill 2.1): there is no 74AHCT244 buffer and no
+// pull-down resistor anywhere on ENA (nor pull-ups on STEP/DIR) -- the Teensy pins
+// wire straight to the TB6600's common-anode (+5V) opto inputs. Nothing holds ENA
+// disabled between power-up and this line running, or during a reset while the 5V/
+// TB6600 side stays powered. This code cannot close that gap; it needs a physical
+// pull-down added on the ENA line (see docs/decisions.md 2026-10-26, issue #18).
 void drive_outputs_safe() {
     pinMode(cfg::pin::ENA, OUTPUT);
     digitalWriteFast(cfg::pin::ENA, LOW);

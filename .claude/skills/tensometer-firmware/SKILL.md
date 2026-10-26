@@ -15,6 +15,8 @@ Revision 3 (2026-10-14). Rev 2: design review applied (ENA polarity and reset-sa
 
 **Revision 6 (2026-10-26): panel/LED/guard pins finalized; guard interlock not fitted.** Mathew delegated the panel/LED/guard pin choice (issue #8); the previously PROVISIONAL assignments (section 2.6) were checked against the Teensy 4.1 datasheet pinout, found conflict-free, and kept as-is: no move needed. The guard interlock is confirmed **not fitted**: `GUARD_SENSE` (pin 28) stays reserved and wired to nothing, and the safety module (section 4) must not enforce the GUARD_SENSE rule while `cfg::GUARD_INTERLOCK_FITTED` is false. Issue #8 fully resolved. See `docs/decisions.md` (2026-10-26).
 
+**Revision 7 (2026-10-26): no driver buffer; reset-safe pulls missing.** Section 2.1 was wrong: there is no 74AHCT244 (or any) buffer between the Teensy and the TB6600 -- GPIO wires straight to the opto inputs, common-anode @ +5 V confirmed, no external current-limiting resistor added. Mathew confirmed there is **no pull-down on ENA and no pull-up on STEP/DIR anywhere**. This is a confirmed, unfixed safety gap: nothing guarantees the motor stays disabled across a reset or before `setup()` runs. `main.cpp`'s drive-safe comment, which wrongly claimed this protection existed, is corrected. Bench bring-up step 2 (section 13) is expected to fail until a physical pull-down is added. Tracked in issue #18. See `docs/decisions.md` (2026-10-26).
+
 ## 0. How to work
 
 - Act as a critical senior firmware reviewer. Name failure modes, check timing and margins, prefer correctness over agreement. Do not just agree; double check against this file and the physics.
@@ -80,11 +82,11 @@ Stock Teensy 4.1 board specs (pin count, voltages, memory, peripherals) come fro
 |---|---|
 | MCU | Teensy 4.1 (600 MHz, FPU). **3.3 V I/O, NOT 5 V tolerant** |
 | Driver | **TB6600 board.** Current set by DIP switches, NOT by firmware. No fault output (firmware cannot detect driver overtemperature or stall). No automatic idle-current reduction (holds at DIP current). Lowest DIP setting typically 0.5 A |
-| Driver interface | 74AHCT244 buffer at 5 V (logic supply), two gates paralleled per signal. Common anode: PUL+, DIR+, ENA+ tied to +5 V. Buffer /OE tied permanently active (never tri-state the outputs) |
+| Driver interface | **No buffer chip (corrected 2026-10-26; was wrongly documented as a 74AHCT244).** Teensy GPIO wired directly to the TB6600 opto inputs. Common anode: PUL+, DIR+, ENA+ tied to +5 V; Teensy sinks on PUL-, DIR-, ENA-. No external current-limiting resistor added (Mathew confirmed); relies entirely on whatever the TB6600 board has internal, TODO(verify) |
 | Opto logic | Teensy LOW -> buffer LOW -> opto ON. Teensy HIGH -> opto OFF |
 | STEP | Idle HIGH (opto off). Pulse = LOW for `STEP_PULSE_US`, default **5 us**, off-time >= 5 us. TB6600 boards use optos of unknown speed (fast 6N137 or slow PC817-class); 5 us is a conservative default. TODO(verify) the opto part, then tighten |
 | ENA | **Opto ON = driver DISABLED** (on many TB6600 boards asserting ENA releases the motor and an unconnected ENA leaves it enabled). VERIFY on the bench. `motor_enable()` drives ENA HIGH, `motor_disable()` drives ENA LOW |
-| Reset safety | Pull-DOWN on the ENA buffer input (reset/unpowered -> motor disabled). Pull-UP on STEP and DIR buffer inputs |
+| Reset safety | **CONFIRMED GAP, not yet fixed (2026-10-26):** no pull-down on ENA and no pull-up on STEP/DIR exist anywhere -- nothing holds the driver disabled between power-up and firmware running, or across a Teensy reset while the 5 V/TB6600 side stays powered. Needs a physical pull-down added on ENA (toward GND) and pull-ups on STEP/DIR, sized against the TB6600's internal opto resistor (unknown, see issue #3). Until fixed, treat "motor disabled on reset" as unverified |
 | DIR setup | >= 5 us before the next step edge after a direction change |
 | Max step rate | Firmware cap **20 kHz** (TB6600 opto limit unknown, can be tens of kHz). 500 mm/min needs 16.7 kHz. Raise the cap only after scope-verifying the opto |
 | Motor | 23HS22-2904S, 200 steps/rev, 1.2 N.m holding, 2.9 A rated |
@@ -184,7 +186,7 @@ LIM_NEAR = end near the stationary jaws (minimum gap). LIM_FAR = motor end (maxi
 
 ### 2.7 Electronics
 
-**Phase 1:** Teensy 4.1 + industrial microSD; USB isolator (full-speed fine); TB6600 driver board; **24 V** PSU (TB6600 boards are typically rated 9 to 42 V; check the board); DC-rated contactor + NC e-stop; 74AHCT244 with pull resistors; 2 NC limit switches with external pull-ups and RC; HX711 (80 SPS) on its own LDO; 6 panel buttons; SSD1306 OLED; fault LED; sync LED; 5 V buck; analogue 3.3 V LDO; ESTOP_SENSE optocoupler; Teensy VUSB/VIN separation if externally powered; connector for the future continuity board. No guard interlock (confirmed not fitted, 2026-10-26).
+**Phase 1:** Teensy 4.1 + industrial microSD; USB isolator (full-speed fine); TB6600 driver board, wired direct to Teensy GPIO with no buffer and **no pull resistors yet** (confirmed gap, 2026-10-26 -- see section 2.1 Reset safety); **24 V** PSU (TB6600 boards are typically rated 9 to 42 V; check the board); DC-rated contactor + NC e-stop; 2 NC limit switches with external pull-ups and RC; HX711 (80 SPS) on its own LDO; 6 panel buttons; SSD1306 OLED; fault LED; sync LED; 5 V buck; analogue 3.3 V LDO; ESTOP_SENSE optocoupler; Teensy VUSB/VIN separation if externally powered; connector for the future continuity board. No guard interlock (confirmed not fitted, 2026-10-26).
 
 **Phase 2 (continuity + routing board):** precision resistors 330 / 3.3k / 33k x4; analog switches x4; instrumentation amps x4; filters, series resistors, clamp diodes; precision V_EXC supply; 8 DPDT gold-contact signal relays; MCP23017; ULN2803; 2 x 8-way tail terminal blocks; shielded twisted pairs; Bode reference resistor + BNCs.
 
@@ -404,7 +406,7 @@ Unit tests (native, Unity): CRC vectors; COBS round trips with zeros; frame enco
 
 Phase 1 bench bring-up (each step passes before the next):
 1. Logic only, no driver power: pins, panel, limits and e-stop (with RC), watchdog, protocol, HELLO capability = core only.
-2. Reset safety: driver powered, motor disconnected. Hold the Teensy in reset, then unplug it: driver stays disabled, no STEP edges. Confirm ENA polarity on the TB6600.
+2. Reset safety: driver powered, motor disconnected. Hold the Teensy in reset, then unplug it: driver stays disabled, no STEP edges. Confirm ENA polarity on the TB6600. **Known gap (2026-10-26): no pull-down exists on ENA yet, so this test is expected to fail / show undefined behaviour until a pull-down is physically added. Do not proceed past this step until it passes.**
 3. Driver timing at the opto output side (scope across the TB6600 opto): pulse and off-time clean at 20 kHz with the 5 us pulse, DIR setup >= 5 us. Identify the opto part. Only then consider raising the cap or shortening the pulse.
 4. Motor, no specimen, low current: direction, steps/mm against a dial gauge, homing and force guard, limits; watch limit and e-stop inputs for noise with the motor running.
 5. HX711 noise floor on its own LDO, hanging-mass calibration, polarity, timestamp jitter.

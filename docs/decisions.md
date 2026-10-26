@@ -7,6 +7,13 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 ### Panel/LED/guard pins finalized (issue #8, part 1 of 2)
 Mathew delegated the pin choice ("you can choose the appropriate pins, i can move the pins around with no issue"). Checked the existing PROVISIONAL assignments (GUARD_SENSE 28, SYNC_LED 29, panel buttons 30-35, FAULT_LED 36) against the Teensy 4.1 datasheet pinout: all are plain GPIO in this block, none shares a pin with the reserved continuity-module pins (16, 17, 20-26), the I2C0 bus (18, 19), or any onboard peripheral (SD/QSPI/Ethernet/USB are on separate, non-overlapping pins). No conflicts found, so the assignments are kept exactly as they were and marked fixed rather than moved. **Approved.**
 
+### Driver interface corrected: no buffer, no reset-safe pulls (confirmed safety gap)
+Section 2.1 wrongly documented a 74AHCT244 buffer between the Teensy and the TB6600. Mathew confirmed: no buffer chip exists; Teensy GPIO wires straight to the TB6600's opto inputs. Common-anode @ +5 V confirmed (board says "connect 5V+" on PUL+/DIR+/ENA+). No external current-limiting resistor was added -- relies entirely on whatever resistor the TB6600 board has internal (unknown, TODO(verify), folds into issue #3's bench check).
+
+More importantly: **there is no pull-down resistor on ENA and no pull-up on STEP/DIR anywhere in the build.** The skill previously described these pulls living "on the buffer input" -- with no buffer, they do not exist. This means nothing physically guarantees the motor stays disabled between power-up and `setup()` running, or across a Teensy reset while the TB6600/5V side stays powered. `main.cpp`'s `drive_outputs_safe()` comment claimed this protection existed; it was false and has been corrected to document the gap instead.
+
+**Not resolved.** This needs a physical pull-down added on ENA (toward GND) and pull-ups on STEP/DIR, sized once the TB6600's internal opto resistor value is known (issue #3). Bench bring-up step 2 (section 13, "Reset safety") is expected to fail until this is fixed -- do not proceed past that step, and do not trust "motor disabled on reset" until it passes. Treat this as safety-blocking for #9 (motion/step ISR) bring-up, though it does not block writing/reviewing the ISR code itself. Tracked in **issue #18**.
+
 ### Guard interlock: not fitted (issue #8, part 2 of 2)
 Confirmed by Mathew: no physical guard/interlock on the machine. `GUARD_SENSE` (pin 28) stays reserved and wired to nothing. Added `cfg::GUARD_INTERLOCK_FITTED = false` in `config.h`; the safety module (issue #11, still blocked by #9) must gate the GUARD_SENSE rule (skill section 4) on this flag rather than assuming the sensor is present. **Approved.** Issue #8 fully resolved.
 
