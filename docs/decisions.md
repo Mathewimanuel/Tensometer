@@ -4,6 +4,25 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-10-26
 
+### Step ISR and homing sequencer added (issue #9, part 2)
+`src/core/stepper.*` adds the step-pulse generator and position tracker named in #9's scope: an `IntervalTimer`-driven ISR that pulses STEP, busy-waits `STEP_PULSE_US` (the one allowed busy-wait, skill 3.2), updates position, and stops exactly on `steps_remaining`. `lib/homing` adds a pure-logic sequencer for the four homing phases (fast approach / back off / slow re-approach / done, skill 3.4), driven by the debounced LIM_FAR switch and the stepper's position -- 12 native tests.
+
+Deliberately out of scope for both, left to whatever core-safety/main-loop code eventually calls them (not yet built -- eventually #9's remaining wiring, or #11):
+- The `|force| < 2 N` homing precondition and `|force| > 5 N` mid-homing abort. Neither file knows about force; the caller is expected to monitor it continuously and trip `SAFETY_TRIP` on the state machine itself, the same resolution already applied to the inhibit-mask question (see the state-machine entry below).
+- "Set zero" on homing completion: `stepper.h` has no position-reset function yet. Needs adding when main.cpp wiring happens.
+- ENA/STEP polarity and the Dir-to-DIR-pin-level mapping are flagged TODO(verify) in the code, not assumed.
+
+**`firmware-reviewer` on the stepper driver: CHANGES REQUESTED, both MAJOR findings fixed:**
+- **Fixed.** `set_motion()`'s "continuing an existing move" branch had a time-of-check-to-time-of-use race: it read `moving_` once, then wrote `steps_remaining_` and called `timer.update()` without re-checking, so if `step_isr()` finished the move in that window (`steps_remaining_` hits 0, `timer.end()`, `moving_ = false`), `timer.update()` would silently no-op against an already-ended timer while `set_motion()` still reported success. Fixed: that branch now re-checks `moving_` inside a brief `noInterrupts()`/`interrupts()` section, and falls through to starting a fresh move if it finished in the meantime (factored into a new `start_fresh_move()` helper, used by both paths).
+- **Fixed.** Skill 3.2 requires the step timer to be the *highest*-priority interrupt in the system; nothing called `IntervalTimer::priority()`, so it ran at the Teensy default (128). `start_fresh_move()` now calls `timer.priority(0)` every time it arms the timer (cheap and idempotent; the stored priority value persists across `begin()`/`end()` cycles in Teensyduino's implementation, so this is defensive, not load-bearing). **TODO(verify):** confirmed as a placeholder, not bench-verified -- there's no competing ISR (HX711, limit/e-stop) to test against yet; recheck once #10 lands.
+- **Fixed (MINOR).** `dir_` is now `volatile` like the other ISR-shared fields, removing an undocumented reliance on `timer.begin()` acting as a compiler barrier.
+- **Open question, not acted on.** `set_motion()`'s accept/reject decision logic (disabled -> reject, direction-change-while-moving -> reject, rate > cap -> reject) has no native tests, since it lives in a `src/` hardware driver file, not `lib/` (consistent with skill 12's layout rule). The reviewer asked whether this decision logic should be factored into a small, natively-tested `lib/` function with `stepper.cpp` left as a thin executor of whatever it decides. Not done here -- ask Mathew before restructuring.
+- **Open, bench-only.** ISR budget (busy-wait + position/steps_remaining update, worst case at the 20 kHz cap) is argued safe but not measured. Confirm during bring-up step 3 (skill 13) with a cycle-counter or spare-pin toggle, not just the planned oscilloscope pulse/off-time check.
+
+Re-verified after fixes: `pio test -e native` 97/97, cppcheck clean, `pio run -e teensy41` and `-e teensy41_sim` both SUCCESS with `-Werror` on our sources, memory budget OK on both.
+
+Not yet wired into main.cpp -- planner, stepper, homing and the state machine all exist now but nothing calls them together yet; that plus a real `position_valid` owner is the rest of #9.
+
 ### Core state machine: interpretive calls resolved by Mathew (issue #9, part 1)
 `lib/state_machine` implements skill section 5's transition table as pure logic (26 native tests, one per table row plus rejections). The table left a few places underspecified; `firmware-reviewer` reviewed the first draft (CHANGES REQUESTED) and Mathew then resolved the open questions:
 
