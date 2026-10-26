@@ -1,5 +1,6 @@
 #include "motion_controller.h"
 
+#include "motion_guard.h"
 #include "motion_profile.h"
 #include "stepper.h"
 
@@ -10,12 +11,15 @@ namespace {
 homing::Sequencer homing_seq;
 motion::Planner planner;
 bool position_valid_ = false;
-stepper::Dir last_commanded_dir_ = stepper::Dir::TOWARD_LIM_FAR;
-bool have_last_commanded_dir_ = false;
+motion_guard::DirectionTracker dir_tracker;
 
 stepper::Dir to_stepper_dir(homing::Dir d) {
     return d == homing::Dir::TOWARD_LIM_FAR ? stepper::Dir::TOWARD_LIM_FAR
                                              : stepper::Dir::TOWARD_LIM_NEAR;
+}
+
+motion_guard::Dir to_guard_dir(stepper::Dir d) {
+    return d == stepper::Dir::TOWARD_LIM_FAR ? motion_guard::Dir::A : motion_guard::Dir::B;
 }
 
 bool sequencing() {
@@ -39,7 +43,7 @@ void stop_and_abort() {
     stepper::stop_immediate();
     planner.reset();
     homing_seq.abort();
-    have_last_commanded_dir_ = false;
+    dir_tracker.reset();
 }
 
 }  // namespace
@@ -53,7 +57,7 @@ bool homing_in_progress() { return sequencing(); }
 void start_homing(const homing::Params& params) {
     homing_seq.start(params);
     planner.reset();
-    have_last_commanded_dir_ = false;
+    dir_tracker.reset();
 }
 
 TickResult tick(uint32_t dt_us, bool lim_far_active, bool force_within_homing_guard) {
@@ -73,7 +77,7 @@ TickResult tick(uint32_t dt_us, bool lim_far_active, bool force_within_homing_gu
         stepper::stop_immediate();
         stepper::zero_position();
         planner.reset();
-        have_last_commanded_dir_ = false;
+        dir_tracker.reset();
         position_valid_ = true;
         return TickResult::DONE;
     }
@@ -90,14 +94,14 @@ TickResult tick(uint32_t dt_us, bool lim_far_active, bool force_within_homing_gu
     // magnitude-only) distance tracking eventually declares BACK_OFF "complete" purely
     // from that wrong-direction travel -- a real bug found by firmware-reviewer: the
     // carriage would drive further into the limit switch instead of backing off, then
-    // report a false, zeroed-at-the-wrong-place "successful" home.
-    if (stepper::moving() &&
-        (!have_last_commanded_dir_ || requested_dir != last_commanded_dir_)) {
+    // report a false, zeroed-at-the-wrong-place "successful" home. The decision itself
+    // (motion_guard::DirectionTracker) is pulled out and natively tested so a future
+    // regression here is caught by CI, not just by inspection.
+    if (dir_tracker.needs_stop_before(to_guard_dir(requested_dir), stepper::moving())) {
         stepper::stop_immediate();
         planner.reset();
     }
-    last_commanded_dir_ = requested_dir;
-    have_last_commanded_dir_ = true;
+    dir_tracker.record_commanded(to_guard_dir(requested_dir));
 
     motion::Params mp{};
     mp.cruise_hz = homing_seq.cruise_hz();

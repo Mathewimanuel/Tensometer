@@ -4,6 +4,16 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-10-26
 
+### Open questions from the homing bug, resolved by Mathew (issue #9, part 3b)
+Three questions raised by the direction-reversal bug and its reviews (see the entry below) were put to Mathew directly:
+
+1. **Limit-switch carve-out for homing: Approved.** "Homing owns its own safety window entirely" -- while any homing phase is active, the core-safety loop's global rule (skill 4: any limit-switch trip -> immediate stop + FAULT) is suspended, and `homing::Sequencer` (which already watches LIM_FAR every tick) is trusted as the sole authority until `HOMING_DONE` or an explicit abort/fault from elsewhere (e.g. the force guard). This is a design note for whoever builds #11 (still blocked on #9) -- no code changes yet, since #11 doesn't exist. Note for that future work: this suspends the *whole* rule, not just LIM_FAR specifically, so a LIM_NEAR trip during homing (unexpected -- homing never approaches that end) would also go unflagged by the global rule under this reading, since `homing::Sequencer` never watches LIM_NEAR at all. Worth re-confirming this is intended when #11 is actually written, not just inferred from this note.
+2. **Stop-on-every-start_homing(): Approved**, as already implemented. Every `start_homing()` forces a hard stop-and-reset on its first tick regardless of whether the stepper happens to already be moving the correct way (e.g. mid-jog toward LIM_FAR when HOME is pressed). Conservative by design; no code change needed.
+3. **Extract the direction-reversal decision into `lib/`: Approved, done.** See `lib/motion_guard` below.
+
+### `lib/motion_guard` added: the CRITICAL bug's fix, now natively tested (issue #9, part 3a)
+Both reviews of the direction-reversal fix (previous entry) flagged the same gap: the fix lived entirely in `motion_controller.cpp`, a `src/` hardware-glue file with no native test suite, so a future regression (e.g. reordering the stop before the direction is recorded) would pass CI silently. Mathew confirmed extracting it. `lib/motion_guard`'s `DirectionTracker` now owns exactly the decision that was missing: given the last direction actually commanded and whether the stepper is still moving, does a newly requested direction need a stop-first before it's safe to issue. `motion_controller.cpp` is now a thin caller of it (`needs_stop_before()` / `record_commanded()` / `reset()`), same pattern as `homing`/`state_machine`/`messages`. 7 new native tests, including one that replays the exact FAST_APPROACH -> BACK_OFF -> SLOW_REAPPROACH sequence that produced the original bug. 111 native tests total, cppcheck clean, both Teensy builds succeed.
+
 ### Step ISR and homing sequencer added (issue #9, part 2)
 `src/core/stepper.*` adds the step-pulse generator and position tracker named in #9's scope: an `IntervalTimer`-driven ISR that pulses STEP, busy-waits `STEP_PULSE_US` (the one allowed busy-wait, skill 3.2), updates position, and stops exactly on `steps_remaining`. `lib/homing` adds a pure-logic sequencer for the four homing phases (fast approach / back off / slow re-approach / done, skill 3.4), driven by the debounced LIM_FAR switch and the stepper's position -- 12 native tests.
 
