@@ -10,24 +10,33 @@
 // L0; see a transition into FAULT, cut motion immediately. This matches the existing
 // module architecture instead of inventing a second, parallel command protocol.
 //
-// Two deliberate interpretive calls, not fully pinned by the skill text -- flagged here
-// and in decisions.md, confirm with Mathew before relying on them for real hardware:
-//   1. ARM's "moved to L0" step has no dedicated visible state in the 12-state list.
-//      Modeled here as an internal arming_ flag: ARM (guards pass) keeps state() at IDLE
-//      and sets arming() true; the caller starts the move-to-L0 and signals completion
-//      with Event::L0_REACHED, which is only accepted while arming() is true and advances
-//      IDLE -> READY. While arming_ is true, every other event is rejected except
-//      L0_REACHED and SAFETY_TRIP -- otherwise a stray/late L0_REACHED from a superseded
-//      move could land the machine in READY from wherever a later JOG/TARE/etc. left the
-//      carriage, breaking the "READY implies at L0" contract. There is currently no way to
-//      cancel a pending ARM other than SAFETY_TRIP; confirm with Mathew whether one is
-//      needed.
-//   2. "RUN / CYCLE | target reached / cycles done | HOLD then READY" is modeled as a
-//      direct RUN/CYCLE -> READY transition on Event::SEGMENT_DONE, not a stop into a
-//      PC-resumable HOLD: a finished test should land ready for the next config, not in
-//      the same paused state an operator-triggered PAUSE produces. If "HOLD then READY"
-//      instead means a real intermediate HOLD a human or PC must explicitly clear, this
-//      needs a new event and a way to tell that HOLD apart from a PAUSE-triggered one.
+// One remaining interpretive call, not fully pinned by the skill text -- flagged here and
+// in decisions.md:
+//   ARM's "moved to L0" step has no dedicated visible state in the 12-state list. Modeled
+//   here as an internal arming_ flag: ARM (guards pass) keeps state() at IDLE and sets
+//   arming() true; the caller starts the move-to-L0 and signals completion with
+//   Event::L0_REACHED, which is only accepted while arming() is true and advances
+//   IDLE -> READY. While arming_ is true, every other event is rejected except L0_REACHED
+//   and SAFETY_TRIP -- otherwise a stray/late L0_REACHED from a superseded move could land
+//   the machine in READY from wherever a later JOG/TARE/etc. left the carriage, breaking
+//   the "READY implies at L0" contract. There is currently no way to cancel a pending ARM
+//   other than SAFETY_TRIP; confirm with Mathew whether one is needed.
+//
+// Resolved by Mathew (2026-10-26, see decisions.md):
+//   - "RUN / CYCLE | target reached / cycles done | HOLD then READY" is a real HOLD, not a
+//     direct jump to READY: Event::SEGMENT_DONE moves RUN/CYCLE -> HOLD (lock: PC) the same
+//     way PAUSE does, but sets the RESUME target to READY instead of RUN/CYCLE, so a
+//     post-test Bode/routing sweep has the HOLD window to run in before the machine resets.
+//   - BREAK_HOLD gets its own exit: Event::RESET also accepts from BREAK_HOLD (not only
+//     FAULT), gated by the same Guards::cause_cleared guard, moving straight to IDLE.
+//   - "Motion requested while an inhibit bit is set" (skill 4, non-negotiable) is the
+//     core-safety loop's job (main loop step 1, skill 3.3), not this state machine's: that
+//     loop runs every pass and calls apply(SAFETY_TRIP, ...) itself as soon as it sees an
+//     inhibit bit set while motion is active or being requested, for every motion-starting
+//     event. This covers motion asserted mid-run (e.g. a module inhibits while RUN is
+//     already underway), which a check wired only into apply() would miss. RESUME stays the
+//     one exception: it's a soft NACK via Guards::module_inhibit_present (stay in HOLD, try
+//     later), not a FAULT, matching the skill's existing RESUME wording.
 #pragma once
 
 #include <stdint.h>
@@ -56,12 +65,15 @@ enum class Event : uint8_t {
                       // transition regardless of which triggered it.
     MODULE_LOCK_REQUEST,  // HOLD -> HOLD (lock: MODULE)
     MODULE_LOCK_RELEASE,  // HOLD -> HOLD (lock: PC)
-    RESUME,          // HOLD -> RUN/CYCLE (the state it was entered from). Rejected unless
+    RESUME,          // HOLD -> wherever this HOLD's RESUME target is (RUN/CYCLE if entered
+                      // via PAUSE, READY if entered via SEGMENT_DONE). Rejected unless
                       // lock_owner() == PC and !Guards::module_inhibit_present.
     SUBSTRATE_BREAK, // RUN/CYCLE -> BREAK_HOLD
-    SEGMENT_DONE,    // RUN/CYCLE -> READY (target reached / cycles done; see note 2 above)
+    SEGMENT_DONE,    // RUN/CYCLE -> HOLD (lock: PC), RESUME target READY (target reached /
+                      // cycles done -- a real HOLD so a post-test Bode sweep has somewhere
+                      // to run; see "Resolved by Mathew" above).
     SAFETY_TRIP,     // any state -> FAULT. Always accepted, including from FAULT itself.
-    RESET,           // FAULT -> IDLE. Rejected unless Guards::cause_cleared.
+    RESET,           // FAULT or BREAK_HOLD -> IDLE. Rejected unless Guards::cause_cleared.
 };
 
 struct Guards {

@@ -123,9 +123,11 @@ bool StateMachine::apply(Event event, const Guards& guards) {
                 return true;
             }
             if (event == Event::SEGMENT_DONE) {
-                // See the header's note 2: modeled as a direct stop into READY, not a
-                // separately resumable HOLD.
-                state_ = CoreState::READY;
+                // Same HOLD as PAUSE, but RESUME should land in READY, not back in
+                // RUN/CYCLE -- reuses return_state_ for that purpose.
+                return_state_ = CoreState::READY;
+                state_ = CoreState::HOLD;
+                lock_owner_ = LockOwner::PC;
                 return true;
             }
             return false;
@@ -150,9 +152,15 @@ bool StateMachine::apply(Event event, const Guards& guards) {
             return false;
 
         case CoreState::BREAK_HOLD:
-            // No exit transition besides SAFETY_TRIP (handled above) is specified in the
-            // skill's table. Open question for Mathew: how does a BREAK_HOLD test ever
-            // return to IDLE for the next one?
+            // Own RESET-like exit back to IDLE (Mathew, 2026-10-26), same cause_cleared
+            // guard as FAULT's RESET -- besides SAFETY_TRIP (handled above), this is the
+            // only way out.
+            if (event == Event::RESET) {
+                if (!guards.cause_cleared) return false;
+                state_ = CoreState::IDLE;
+                lock_owner_ = LockOwner::NONE;
+                return true;
+            }
             return false;
 
         case CoreState::FAULT:

@@ -238,21 +238,47 @@ static void test_substrate_break_from_run_and_cycle() {
     TEST_ASSERT_TRUE(sm_cycle.state() == CoreState::BREAK_HOLD);
 }
 
-static void test_segment_done_from_run_reaches_ready() {
+static void test_segment_done_from_run_holds_then_resumes_to_ready() {
     StateMachine sm = ready();
-    sm.apply(Event::START, {});
+    sm.apply(Event::START, {});  // -> RUN
     TEST_ASSERT_TRUE(sm.apply(Event::SEGMENT_DONE, {}));
-    TEST_ASSERT_TRUE(sm.state() == CoreState::READY);
+    TEST_ASSERT_TRUE(sm.state() == CoreState::HOLD);
+    TEST_ASSERT_TRUE(sm.lock_owner() == LockOwner::PC);
+
+    // A Bode/routing sweep can run here (the whole point of landing in a real HOLD).
+    TEST_ASSERT_TRUE(sm.apply(Event::MODULE_LOCK_REQUEST, {}));
+    TEST_ASSERT_TRUE(sm.apply(Event::MODULE_LOCK_RELEASE, {}));
+
+    TEST_ASSERT_TRUE(sm.apply(Event::RESUME, {}));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::READY);  // not back in RUN
 }
 
-static void test_break_hold_has_no_exit_except_safety_trip() {
+static void test_segment_done_from_cycle_holds_then_resumes_to_ready() {
+    StateMachine sm = ready();
+    Guards g{};
+    g.cycle_mode = true;
+    sm.apply(Event::START, g);  // -> CYCLE
+    TEST_ASSERT_TRUE(sm.apply(Event::SEGMENT_DONE, {}));
+    TEST_ASSERT_TRUE(sm.apply(Event::RESUME, {}));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::READY);  // not back in CYCLE
+}
+
+static void test_break_hold_exits_to_idle_on_reset_with_cause_cleared() {
     StateMachine sm = ready();
     sm.apply(Event::START, {});
     sm.apply(Event::SUBSTRATE_BREAK, {});
     TEST_ASSERT_TRUE(sm.state() == CoreState::BREAK_HOLD);
+
+    // Nothing but RESET (and SAFETY_TRIP) gets out, and RESET needs cause_cleared.
     TEST_ASSERT_FALSE(sm.apply(Event::RESET, {}));
     TEST_ASSERT_FALSE(sm.apply(Event::HOME, {}));
     TEST_ASSERT_TRUE(sm.state() == CoreState::BREAK_HOLD);
+
+    Guards g{};
+    g.cause_cleared = true;
+    TEST_ASSERT_TRUE(sm.apply(Event::RESET, g));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);
+    TEST_ASSERT_TRUE(sm.lock_owner() == LockOwner::NONE);
 }
 
 static void test_safety_trip_wins_from_every_state() {
@@ -344,8 +370,9 @@ int main() {
     RUN_TEST(test_module_lock_blocks_resume_until_released);
     RUN_TEST(test_resume_blocked_by_module_inhibit_bit);
     RUN_TEST(test_substrate_break_from_run_and_cycle);
-    RUN_TEST(test_segment_done_from_run_reaches_ready);
-    RUN_TEST(test_break_hold_has_no_exit_except_safety_trip);
+    RUN_TEST(test_segment_done_from_run_holds_then_resumes_to_ready);
+    RUN_TEST(test_segment_done_from_cycle_holds_then_resumes_to_ready);
+    RUN_TEST(test_break_hold_exits_to_idle_on_reset_with_cause_cleared);
     RUN_TEST(test_safety_trip_wins_from_every_state);
     RUN_TEST(test_safety_trip_during_arming_clears_the_flag);
     RUN_TEST(test_reset_requires_cause_cleared);
