@@ -4,6 +4,9 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-10-26
 
+### Issue #9 closed; #11 unblocked
+All of #9's stated scope landed and reviewed clean (entries below, newest first): state machine, motion planner (pre-existing), step ISR, homing sequencer, the `position_valid`-owning glue, and the CRITICAL bug found in it along the way, fixed and extracted into tested `lib/motion_guard`. 111 native tests, final `firmware-reviewer` round OK, CI green. Closed with a comment linking the commits (`2b80bc8`..`7fb8b41`). `#11` (safety module) had its `blocked` label removed per CLAUDE.md's rule and got a comment pointing at the two design decisions immediately below that it needs to implement. `main.cpp` wiring itself is not in #9's scope and is not done -- it waits on #11 existing, since the limit-switch carve-out (item 1 below) has to live somewhere before homing can run safely under a real core-safety loop.
+
 ### Open questions from the homing bug, resolved by Mathew (issue #9, part 3b)
 Three questions raised by the direction-reversal bug and its reviews (see the entry below) were put to Mathew directly:
 

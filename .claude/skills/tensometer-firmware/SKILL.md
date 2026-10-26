@@ -445,6 +445,9 @@ Stall and coupler tests only on the 500 kg profile with a steel dummy.
 - Proposed HX711 critical-section rule (section 3.2) awaiting approval.
 - Coupler slip setting for the 500 kg profile.
 - Jaw gap at home position (calibration constant).
+- Homing speeds/accel/back-off distance (`homing::Params`) are still OPEN -- no values set anywhere, caller-supplied only. Not bounds-checked against `cfg::STEP_RATE_MAX_HZ` yet either (decisions.md 2026-10-26); a misconfigured value above the cap wouldn't fail at homing start, only mid-approach.
+- Core-safety loop (#11) needs an explicit carve-out for the LIM_FAR trip during homing's FAST_APPROACH -- decided as "homing owns its own safety window entirely" (decisions.md 2026-10-26), but note that reading suspends the *whole* limit-switch rule during any homing phase, including an unexpected LIM_NEAR trip that `lib/homing` never watches for. Re-confirm this is still intended when #11 is actually written.
+- `#11` also owns inhibit-mask enforcement for every motion-starting event (`HOME`/`JOG_START`/`TARE_START`/`PRELOAD_START`/`ARM`/`START`) -- `lib/state_machine` only checks it for `RESUME` (decisions.md 2026-10-26).
 - Continuity front-end schematic and phase 2 board connector pinout.
 - Siglent AWG option (PC side).
 - Ramp acceleration for the motion planner: no moving-assembly inertia data exists yet, so no value is set anywhere; propose tuning conservatively at bench bring-up step 4 (section 13), not inventing a number now.
