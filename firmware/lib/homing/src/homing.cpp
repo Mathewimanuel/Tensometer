@@ -30,10 +30,45 @@ uint32_t Sequencer::cruise_hz() const {
     return 0;
 }
 
+uint32_t Sequencer::accel_hz_per_s() const {
+    switch (phase_) {
+        case Phase::FAST_APPROACH:
+        case Phase::BACK_OFF:
+        case Phase::SLOW_REAPPROACH:
+            return params_.accel_hz_per_s;
+        case Phase::IDLE:
+        case Phase::DONE:
+            return 0;
+    }
+    return 0;
+}
+
+uint32_t Sequencer::steps_remaining(int32_t position_steps) const {
+    switch (phase_) {
+        case Phase::FAST_APPROACH:
+        case Phase::SLOW_REAPPROACH:
+            return motion::UNBOUNDED_STEPS;
+
+        case Phase::BACK_OFF: {
+            const int32_t moved = position_steps - phase_start_position_;
+            const uint32_t moved_abs =
+                moved < 0 ? static_cast<uint32_t>(-moved) : static_cast<uint32_t>(moved);
+            return moved_abs >= params_.back_off_steps ? 0 : params_.back_off_steps - moved_abs;
+        }
+
+        case Phase::IDLE:
+        case Phase::DONE:
+            return 0;
+    }
+    return 0;
+}
+
 void Sequencer::start(const Params& params) {
     params_ = params;
     phase_ = Phase::FAST_APPROACH;
 }
+
+void Sequencer::abort() { phase_ = Phase::IDLE; }
 
 Phase Sequencer::tick(int32_t position_steps, bool lim_far_active) {
     switch (phase_) {

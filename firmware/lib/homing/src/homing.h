@@ -22,6 +22,8 @@
 
 #include <stdint.h>
 
+#include "motion_profile.h"  // motion::UNBOUNDED_STEPS
+
 namespace homing {
 
 // Named after the limit switches, matching stepper::Dir's convention and for the same
@@ -34,6 +36,8 @@ struct Params {
     uint32_t back_off_steps;  // distance to withdraw from LIM_FAR before re-approaching
     uint32_t fast_hz;         // cruise rate for FAST_APPROACH and BACK_OFF
     uint32_t slow_hz;         // cruise rate for SLOW_REAPPROACH
+    uint32_t accel_hz_per_s;  // ramp rate handed to motion::Planner alongside cruise_hz();
+                              // homing's own value, not necessarily the test-move one.
 };
 
 class Sequencer {
@@ -50,8 +54,27 @@ public:
     // SLOW_REAPPROACH, 0 during IDLE/DONE).
     uint32_t cruise_hz() const;
 
+    // Ramp rate for the current phase, for the caller's motion::Planner (params_.
+    // accel_hz_per_s while actually homing, 0 during IDLE/DONE -- meaningless then, same
+    // as cruise_hz()).
+    uint32_t accel_hz_per_s() const;
+
+    // Steps left before the current phase's own sub-target, meant as the `remaining_steps`
+    // argument to the caller's motion::Planner::tick(). motion::UNBOUNDED_STEPS for
+    // FAST_APPROACH/SLOW_REAPPROACH (limit-switch terminated, not distance-terminated); the
+    // back-off distance still to go for BACK_OFF; 0 for IDLE/DONE. `position_steps` is the
+    // same absolute position tick() is called with.
+    uint32_t steps_remaining(int32_t position_steps) const;
+
     // Begins a homing cycle from any phase, including re-starting one already DONE.
     void start(const Params& params);
+
+    // Abandons an in-progress cycle (e.g. the caller's force guard tripped, skill 3.4:
+    // "Abort with FAULT"), resetting to IDLE. Only a fresh start() can resume homing after
+    // this -- a stray tick() call after abort() (without an intervening start()) stays IDLE
+    // and does nothing, same as before any cycle ever began. Safe to call from any phase,
+    // including IDLE/DONE (a no-op then).
+    void abort();
 
     // Advance one tick. `position_steps` is the stepper's current absolute position
     // (read-only truth from outside this class, e.g. stepper::position_steps());

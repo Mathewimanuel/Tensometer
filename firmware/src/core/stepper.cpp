@@ -73,6 +73,8 @@ void disable() {
 
 bool enabled() { return enabled_; }
 
+void zero_position() { position_steps_ = 0; }
+
 int32_t position_steps() { return position_steps_; }
 
 bool moving() { return moving_; }

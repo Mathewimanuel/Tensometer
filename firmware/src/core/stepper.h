@@ -49,6 +49,12 @@ int32_t position_steps();
 
 bool moving();
 
+// Resets position truth to 0 ("set zero", skill 3.4) -- meant to be called once, right
+// after a homing cycle completes. Caller must ensure !moving() first (e.g. stop_immediate()
+// then zero_position()); this does not stop anything itself, so calling it mid-pulse-train
+// would desync the counter from the real position.
+void zero_position();
+
 // Starts or updates a move in direction `dir` at `rate_hz`, with `steps_remaining` steps
 // left before this move's target (motion::UNBOUNDED_STEPS for an open-ended jog/preload
 // move). Call once per main-loop tick, after motion::Planner::tick() has produced the new
