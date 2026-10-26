@@ -392,9 +392,9 @@ firmware/
   src/core/     main.cpp  stepper.cpp  hx711.cpp  safety.cpp  state_machine.cpp
                 comms.cpp  sdlog.cpp  panel.cpp  oled.cpp  modules.cpp
   src/modules/  continuity/  routing/  sim_continuity/
-  lib/          crc16/  cobs/  frame/  break_detect/  continuity_logic/  motion_profile/
+  lib/          crc16/  cobs/  frame/  messages/  break_detect/  continuity_logic/  motion_profile/
                 slip_check/  config_sections/
-  test/         test_crc16/  test_cobs/  test_frame/  test_break_detect/  test_continuity/
+  test/         test_crc16/  test_cobs/  test_frame/  test_messages/  test_break_detect/  test_continuity/
                 test_profile/  test_slip/  test_config_sections/  test_module_seam/
 ```
 
