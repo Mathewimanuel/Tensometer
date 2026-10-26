@@ -47,7 +47,8 @@ Sessions don't remember each other. The repo is the only memory: if it isn't wri
 - Reference issues in commits (`Closes #3`) so the history explains itself.
 - **The firmware skill has two copies:** this repo (master) and Mathew's claude.ai skills. If you change `.claude/skills/tensometer-firmware/SKILL.md`, say so clearly in your final message so Mathew can update the claude.ai copy.
 
-## Current status (2026-10-14)
+## Current status (2026-10-26)
 
-- Done: repo skeleton, config/limits/protocol/module headers, safe-boot `main.cpp`, `crc16`, `cobs` and `frame` libraries with native tests, CI with static analysis and memory budget, flash-blocking hook, reviewer subagent.
-- Next: see open GitHub issues. Unblocked firmware work: #13 (break detection), #12 (protocol bodies). Motion (#9) waits on decision #1; HX711 driver (#10) waits on decision #2.
+- Done: repo skeleton, config/safety_limits/protocol/module headers, safe-boot `main.cpp`, `crc16`, `cobs`, `frame`, `motion_profile`, `break_detect` and `messages` libraries with native tests, CI with static analysis and memory budget, flash-blocking hook, reviewer subagent. Motion rate-update method decided (#1, closed). Panel/LED/guard pins finalized and guard interlock confirmed not fitted (#8, closed). Protocol bumped to 0.2 with core message bodies (HELLO/ACK/NACK/HEARTBEAT/TELEMETRY/EVENT) defined (#12). Break detection classifier implemented per skill section 7 (#13), including the drop/conductor-coincidence and slip logic; `break_detect::EventType` is deliberately not wire-compatible with `proto::EventType` and needs an explicit mapping function (not a cast) whenever it's wired into comms/SD.
+- Confirmed safety gap, not yet fixed: no buffer chip and no reset-safe pull resistors on ENA/STEP/DIR (#18). Treat "motor disabled on reset" as unverified until a physical pull-down is added and bench bring-up step 2 passes.
+- Next: see open GitHub issues. `break_detect` and `messages` are not yet wired into `main.cpp`/a state machine -- that's part of #9/#11. Motion (#9) can be written and reviewed, but real bench bring-up of it must not be trusted until #18 (reset-safe pulls) is physically fixed and bring-up step 2 passes. Safety module (#11) still waits on #9. HX711 driver (#10) waits on decision #2.
