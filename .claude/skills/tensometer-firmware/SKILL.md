@@ -387,7 +387,7 @@ Hard stops (section 4) always win.
 
 ```
 firmware/
-  platformio.ini        # envs: teensy41 (phase 1), teensy41_full, teensy41_sim, native
+  platformio.ini        # envs: teensy41 (phase 1), teensy41_sim, native
   include/  config.h  safety_limits.h  protocol.h  module_api.h
   src/core/     main.cpp  stepper.cpp  hx711.cpp  safety.cpp  state_machine.cpp
                 comms.cpp  sdlog.cpp  panel.cpp  oled.cpp  modules.cpp
