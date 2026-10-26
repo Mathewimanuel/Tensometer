@@ -141,8 +141,8 @@ Not known yet: overall length, thread size and depth, bore spacing, body dimensi
 
 ## 7. Electronics (handover state; firmware decisions supersede where they differ)
 
-- Teensy 4.1. 74AHCT244 buffer at 5 V, common-anode, active-low.
-- **TB6600 (verify on the board):** no fault output; no automatic idle-current reduction; ENA often works inverted (asserting releases the motor, unconnected leaves it enabled); optos may limit pulse rate to tens of kHz; keep the buffer.
+- Teensy 4.1. **No 74AHCT244 buffer actually fitted (confirmed 2026-10-26, decisions.md, issue #18) -- this line was wrong.** Teensy GPIO wires directly to the TB6600 opto inputs, common-anode @ +5 V, active-low. No pull-down on ENA, no pull-up on STEP/DIR anywhere: a confirmed, unfixed safety gap.
+- **TB6600 (verify on the board):** no fault output; no automatic idle-current reduction; ENA often works inverted (asserting releases the motor, unconnected leaves it enabled); optos may limit pulse rate to tens of kHz.
 - **Supply:** 24 V through a DC-rated e-stop contactor. Keep motor return off logic ground.
 - Limit switches NC. Shielded motor cable, shield at the driver end.
 - Pin map: see the firmware skill (supersedes the handover pin list).

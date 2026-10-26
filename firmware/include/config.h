@@ -20,7 +20,8 @@ constexpr uint32_t STEPS_PER_MM = 1000000 / NM_PER_STEP;               // 2000
 static_assert(SCREW_LEAD_NM % STEPS_PER_SCREW_REV == 0, "step size must be a whole number of nm");
 static_assert(NM_PER_STEP == 500, "drive train changed: re-check every derived number in the skill");
 
-// ---- Step signal timing (TB6600 opto via 74AHCT244, active low) -----------------
+// ---- Step signal timing (TB6600 opto, direct-driven, active low; no buffer chip,
+// confirmed 2026-10-26, see decisions.md and issue #18) ---------------------------
 // TODO(verify): opto part on the actual TB6600 board. 5 us is conservative for
 // slow PC817-class optos; tighten only after scoping the opto output.
 constexpr uint32_t STEP_PULSE_US = 5;
