@@ -50,6 +50,12 @@ constexpr uint32_t HX711_SCK_HIGH_MAX_US = 60;         // chip powers down beyon
 // TODO(verify): jaw gap at the home position (LIM_FAR), measured once on the machine.
 constexpr uint32_t JAW_GAP_AT_HOME_UM = 0;
 
+// ---- Guard interlock --------------------------------------------------------------
+// Not fitted (decisions.md 2026-10-26, issue #8). GUARD_SENSE stays reserved and
+// wired to nothing; the safety module must not enforce the GUARD_SENSE rule
+// (skill section 4) while this is false.
+constexpr bool GUARD_INTERLOCK_FITTED = false;
+
 // ---- Pins (Teensy 4.1). Status per skill section 2.6 ------------------------------
 namespace pin {
 constexpr uint8_t STEP = 2;
@@ -63,7 +69,10 @@ constexpr uint8_t ESTOP_SENSE = 9;  // opto from the contactor output
 constexpr uint8_t I2C_SDA = 18;
 constexpr uint8_t I2C_SCL = 19;
 constexpr uint8_t STATUS_LED = 13;
-// PROVISIONAL
+// Finalized 2026-10-26 (decisions.md, issue #8): checked against the Teensy 4.1
+// datasheet pinout, no conflict with any onboard peripheral or the reserved
+// continuity pins below. GUARD_SENSE wiring stays unused until the guard
+// interlock fitment question (issue #8) is answered.
 constexpr uint8_t GUARD_SENSE = 28;
 constexpr uint8_t SYNC_LED = 29;
 constexpr uint8_t BTN_START = 30;

@@ -13,6 +13,8 @@ Revision 3 (2026-10-14). Rev 2: design review applied (ENA polarity and reset-sa
 
 **Revision 5 (2026-10-15): motion planner architecture and preload.** Motion rate-update method approved (section 3.4): one 1 kHz trapezoidal planner serves every motion source (test ramp, jog, homing, preload); sources differ only in what stop condition they hand the planner, reusing the existing `CONTROLLED`/`IMMEDIATE` stop-type split. New `PRELOAD` state added (section 5): a separate operator-triggered action, not folded into ARM, that reuses the homing-style force-guard pattern (creep at a slow speed, controlled stop when force reaches a threshold) rather than a new motion primitive. Jog (unloaded) speed is now defined as equal to the homing fast-approach speed (one shared constant) — direction decided, exact mm/min value still open. Preload threshold force and approach speed are open, pending an HX711 noise-floor measurement. See `docs/decisions.md` (2026-10-15) for the full discussion.
 
+**Revision 6 (2026-10-26): panel/LED/guard pins finalized; guard interlock not fitted.** Mathew delegated the panel/LED/guard pin choice (issue #8); the previously PROVISIONAL assignments (section 2.6) were checked against the Teensy 4.1 datasheet pinout, found conflict-free, and kept as-is: no move needed. The guard interlock is confirmed **not fitted**: `GUARD_SENSE` (pin 28) stays reserved and wired to nothing, and the safety module (section 4) must not enforce the GUARD_SENSE rule while `cfg::GUARD_INTERLOCK_FITTED` is false. Issue #8 fully resolved. See `docs/decisions.md` (2026-10-26).
+
 ## 0. How to work
 
 - Act as a critical senior firmware reviewer. Name failure modes, check timing and margins, prefer correctness over agreement. Do not just agree; double check against this file and the physics.
@@ -172,17 +174,17 @@ Safety: `safety_check()` faults if the ADC DMA stalls.
 | ADC_A[0..3] | 16, 17, 20, 21 | Continuity, RESERVED now, PROVISIONAL |
 | ADC_B[0..3] | 22, 23, 24, 25 | Continuity, RESERVED now, PROVISIONAL |
 | V_EXC sense | 26 (A12) | Continuity, RESERVED now, PROVISIONAL |
-| Panel: START, STOP, JOG+, JOG-, HOME, TARE | 30-35 | Core, PROVISIONAL |
-| FAULT LED | 36 | Core, PROVISIONAL |
-| SYNC LED (video sync, in camera view) | 29 | Core, PROVISIONAL |
-| GUARD_SENSE (optional) | 28 | Core, PROVISIONAL |
+| Panel: START, STOP, JOG+, JOG-, HOME, TARE | 30-35 | Core, fixed (2026-10-26) |
+| FAULT LED | 36 | Core, fixed (2026-10-26) |
+| SYNC LED (video sync, in camera view) | 29 | Core, fixed (2026-10-26) |
+| GUARD_SENSE (not fitted) | 28 | Core, fixed (2026-10-26). Reserved, wired to nothing; guard interlock confirmed not fitted |
 | LED_BUILTIN | 13 | Status LED. SPI unused |
 
 LIM_NEAR = end near the stationary jaws (minimum gap). LIM_FAR = motor end (maximum gap).
 
 ### 2.7 Electronics
 
-**Phase 1:** Teensy 4.1 + industrial microSD; USB isolator (full-speed fine); TB6600 driver board; **24 V** PSU (TB6600 boards are typically rated 9 to 42 V; check the board); DC-rated contactor + NC e-stop; 74AHCT244 with pull resistors; 2 NC limit switches with external pull-ups and RC; HX711 (80 SPS) on its own LDO; 6 panel buttons; SSD1306 OLED; fault LED; sync LED; 5 V buck; analogue 3.3 V LDO; ESTOP_SENSE optocoupler; Teensy VUSB/VIN separation if externally powered; connector for the future continuity board. Optional guard interlock.
+**Phase 1:** Teensy 4.1 + industrial microSD; USB isolator (full-speed fine); TB6600 driver board; **24 V** PSU (TB6600 boards are typically rated 9 to 42 V; check the board); DC-rated contactor + NC e-stop; 74AHCT244 with pull resistors; 2 NC limit switches with external pull-ups and RC; HX711 (80 SPS) on its own LDO; 6 panel buttons; SSD1306 OLED; fault LED; sync LED; 5 V buck; analogue 3.3 V LDO; ESTOP_SENSE optocoupler; Teensy VUSB/VIN separation if externally powered; connector for the future continuity board. No guard interlock (confirmed not fitted, 2026-10-26).
 
 **Phase 2 (continuity + routing board):** precision resistors 330 / 3.3k / 33k x4; analog switches x4; instrumentation amps x4; filters, series resistors, clamp diodes; precision V_EXC supply; 8 DPDT gold-contact signal relays; MCP23017; ULN2803; 2 x 8-way tail terminal blocks; shielded twisted pairs; Bode reference resistor + BNCs.
 
@@ -260,7 +262,7 @@ No step may block. Anything slow is split into slices.
    - watchdog reset detected at boot (report, stay IDLE);
    - motion requested while any motion-inhibit bit is set;
    - any module `safety_check()` fault;
-   - GUARD_SENSE open while a run-to-break test is armed (if fitted);
+   - GUARD_SENSE open while a run-to-break test is armed, **only if `cfg::GUARD_INTERLOCK_FITTED` is true** (currently false — not fitted, decided 2026-10-26);
    - **slip suspect:** while extending, force > 80% of the profile's coupler slip force and force change < 1% over >= 2 mm commanded travel (clear `position_valid`);
    - homing force guard (3.4).
 3. FAULT clears only by explicit RESET after the cause is gone. Never auto-restart motion. If `position_valid` was cleared, re-home before RUN.
@@ -434,14 +436,13 @@ Stall and coupler tests only on the 500 kg profile with a steel dummy.
 
 ## 15. Open items
 
-- All PROVISIONAL pins, MCP23017, analog switch and instrumentation amp parts, amp gain.
+- Continuity-module PROVISIONAL pins (phase 2, section 2.4/2.6), MCP23017, analog switch and instrumentation amp parts, amp gain — await the phase 2 schematic (issue #17). Core panel/LED/guard pins are finalized (rev 6).
 - TB6600 board: ENA polarity, opto part and speed, DIP current table (peak or RMS), printed voltage rating.
 - Motor torque at 625 rpm (500 mm/min) and the gearbox rated output torque.
 - Proposed HX711 critical-section rule (section 3.2) awaiting approval.
 - Coupler slip setting for the 500 kg profile.
 - Jaw gap at home position (calibration constant).
 - Continuity front-end schematic and phase 2 board connector pinout.
-- Guard interlock fitted or not.
 - Siglent AWG option (PC side).
 - Ramp acceleration for the motion planner: no moving-assembly inertia data exists yet, so no value is set anywhere; propose tuning conservatively at bench bring-up step 4 (section 13), not inventing a number now.
 - Homing fast-approach / slow-re-approach speed, and unloaded jog speed (= homing fast-approach, rev 5 decision): direction decided, mm/min value open.
