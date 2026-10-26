@@ -377,7 +377,7 @@ Hard stops (section 4) always win.
 
 - C++17, Arduino framework on PlatformIO. No `delay()` in normal paths. No `new`/`malloc`/`String`/allocating STL.
 - Fixed-width types. Units in names: `_steps`, `_um`, `_mN`, `_mohm`, `_us`, `_hz`.
-- Constants in `config.h` (hardware) and `limits.h` (safety). No magic numbers.
+- Constants in `config.h` (hardware) and `safety_limits.h` (safety). No magic numbers.
 - Pure logic (CRC, COBS, break detection, continuity classification, motion profile maths, slip check, config-section parsing) in `lib/` with no Arduino dependency.
 - Hardware access only in thin driver files.
 - Every function that can fail returns a status; callers check it.
@@ -388,7 +388,7 @@ Hard stops (section 4) always win.
 ```
 firmware/
   platformio.ini        # envs: teensy41 (phase 1), teensy41_full, teensy41_sim, native
-  include/  config.h  limits.h  protocol.h  module_api.h
+  include/  config.h  safety_limits.h  protocol.h  module_api.h
   src/core/     main.cpp  stepper.cpp  hx711.cpp  safety.cpp  state_machine.cpp
                 comms.cpp  sdlog.cpp  panel.cpp  oled.cpp  modules.cpp
   src/modules/  continuity/  routing/  sim_continuity/

@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 #include "config.h"
-#include "limits.h"
+#include "safety_limits.h"
 #include "module_api.h"
 #include "protocol.h"
 

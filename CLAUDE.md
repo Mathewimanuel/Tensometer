@@ -43,7 +43,7 @@ Sessions don't remember each other. The repo is the only memory: if it isn't wri
 
 - **GitHub issues are the work queue.** At the start of a session with no specific task, list open issues (`gh api repos/Mathewimanuel/tensometer/issues`; GraphQL is unavailable in some sessions, so prefer the REST API). Labels: `decision` (needs Mathew, never decide it yourself), `hardware` (needs a measurement on the real parts), `firmware`, `tooling`, `phase-2`, `blocked`.
 - Never start an issue labelled `blocked` or `decision`. When a blocking issue closes, remove `blocked` from the issues it unblocks.
-- When Mathew reports a measurement or a decision: record it in `docs/decisions.md` (dated), update the skill and `config.h`/`limits.h` where it applies, close the issue with a comment linking the commit.
+- When Mathew reports a measurement or a decision: record it in `docs/decisions.md` (dated), update the skill and `config.h`/`safety_limits.h` where it applies, close the issue with a comment linking the commit.
 - Reference issues in commits (`Closes #3`) so the history explains itself.
 - **The firmware skill has two copies:** this repo (master) and Mathew's claude.ai skills. If you change `.claude/skills/tensometer-firmware/SKILL.md`, say so clearly in your final message so Mathew can update the claude.ai copy.
 
