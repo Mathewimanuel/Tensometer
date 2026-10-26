@@ -385,6 +385,8 @@ Hard stops (section 4) always win.
 
 ## 12. Project layout
 
+
+
 ```
 firmware/
   platformio.ini        # envs: teensy41 (phase 1), teensy41_sim, native
@@ -398,6 +400,7 @@ firmware/
                 test_state_machine/  test_homing/  test_motion_guard/  test_continuity/
                 test_profile/  test_slip/  test_config_sections/  test_module_seam/
 ```
+
 
 Pin library versions in `platformio.ini`.
 
