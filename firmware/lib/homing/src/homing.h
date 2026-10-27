@@ -1,8 +1,20 @@
 // Homing sequencer (skill section 3.4: "Home to LIM_FAR: fast approach, back off, slow
-// re-approach, set zero"). Pure logic, no Arduino dependency: sequences the four phases by
+// re-approach, set zero"). Pure logic, no Arduino dependency: sequences the phases by
 // watching the debounced LIM_FAR switch state and the stepper's absolute position, and
 // tells the caller which way to drive and at what rate. It issues no hardware commands
 // itself (same "callers react, this only decides" pattern as lib/state_machine).
+//
+// A fifth phase, RELEASE, was added 2026-10-27 (not in the skill's literal four-phase
+// wording) after review: SLOW_REAPPROACH used to go straight to DONE the instant LIM_FAR
+// tripped, meaning homing habitually finished sitting on an actively-tripped switch. The
+// core-safety loop's LIM_FAR carve-out (lib/core_safety) only applies while core state is
+// HOMING -- the instant HOMING_DONE moves the state machine to IDLE, that carve-out lifts,
+// and an immediately-still-tripped LIM_FAR would self-fault on the very next core-safety
+// tick, with no implemented recovery path. RELEASE backs off (TOWARD_LIM_NEAR, at
+// slow_hz, same as SLOW_REAPPROACH) until LIM_FAR reads inactive again, *then* reports
+// DONE -- so "zero" is now defined at the switch's release point, not its trip point, a
+// small but real change to where position 0 physically ends up. See docs/decisions.md
+// 2026-10-27.
 //
 // Deliberately out of scope here, left to the caller (core-safety loop, skill 3.4/4):
 //   - The |force| < 2 N precondition and the |force| > 5 N mid-homing abort. This class
@@ -30,7 +42,7 @@ namespace homing {
 // reason: this file does not know which physical direction either value drives.
 enum class Dir : uint8_t { TOWARD_LIM_FAR, TOWARD_LIM_NEAR };
 
-enum class Phase : uint8_t { IDLE, FAST_APPROACH, BACK_OFF, SLOW_REAPPROACH, DONE };
+enum class Phase : uint8_t { IDLE, FAST_APPROACH, BACK_OFF, SLOW_REAPPROACH, RELEASE, DONE };
 
 struct Params {
     uint32_t back_off_steps;  // distance to withdraw from LIM_FAR before re-approaching
@@ -51,7 +63,7 @@ public:
     Dir direction() const;
 
     // Cruise rate for the current phase (fast_hz for FAST_APPROACH/BACK_OFF, slow_hz for
-    // SLOW_REAPPROACH, 0 during IDLE/DONE).
+    // SLOW_REAPPROACH/RELEASE, 0 during IDLE/DONE).
     uint32_t cruise_hz() const;
 
     // Ramp rate for the current phase, for the caller's motion::Planner (params_.
@@ -61,9 +73,9 @@ public:
 
     // Steps left before the current phase's own sub-target, meant as the `remaining_steps`
     // argument to the caller's motion::Planner::tick(). motion::UNBOUNDED_STEPS for
-    // FAST_APPROACH/SLOW_REAPPROACH (limit-switch terminated, not distance-terminated); the
-    // back-off distance still to go for BACK_OFF; 0 for IDLE/DONE. `position_steps` is the
-    // same absolute position tick() is called with.
+    // FAST_APPROACH/SLOW_REAPPROACH/RELEASE (all three are limit-switch terminated, not
+    // distance-terminated); the back-off distance still to go for BACK_OFF; 0 for
+    // IDLE/DONE. `position_steps` is the same absolute position tick() is called with.
     uint32_t steps_remaining(int32_t position_steps) const;
 
     // Begins a homing cycle from any phase, including re-starting one already DONE.

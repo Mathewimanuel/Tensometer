@@ -27,6 +27,7 @@ bool sequencing() {
         case homing::Phase::FAST_APPROACH:
         case homing::Phase::BACK_OFF:
         case homing::Phase::SLOW_REAPPROACH:
+        case homing::Phase::RELEASE:
             return true;
         case homing::Phase::IDLE:
         case homing::Phase::DONE:

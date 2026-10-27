@@ -2,6 +2,23 @@
 
 Newest first. Each entry: date, decision, reason, status. Anything marked PROPOSED is not approved; ask Mathew before acting on it.
 
+## 2026-10-27
+
+### `lib/core_safety` added: first slice of #11, two real gaps found and fixed
+First code for issue #11 (safety module), scoped deliberately narrow: just the two rules blocking `main.cpp` wiring of #9's pieces (limit-switch-vs-homing carve-out, inhibit-mask-vs-motion). Everything else in skill section 4 (cutoff, e-stop, heartbeat, stale sensor, watchdog, slip-suspect, GUARD_SENSE, soft limits) is explicitly out of scope for this slice.
+
+**`firmware-reviewer`: BLOCK, two CRITICAL findings, one MAJOR. All resolved:**
+
+1. **Fixed directly (not a judgment call -- the first draft just didn't match the already-agreed design).** `Inputs.motion_requested` was a one-tick pulse at dispatch, so the inhibit-mask check only fired at the instant a command was issued, missing the exact scenario the 2026-10-26 state-machine decision said this check exists to catch: a module asserting an inhibit bit mid-RUN, well after dispatch. Renamed to `motion_active` with a caller contract that it stays true for the whole duration of any motion (including ARM's `arming()`, which `core_state` alone can't represent). New test for the mid-run case.
+2. **Narrowed after review, with Mathew's input -- the original decision (2026-10-26) was too broad.** The first draft suspended the *whole* limit-switch rule (both LIM_NEAR and LIM_FAR) for all of `HOMING`, per the earlier "homing owns its own safety window entirely" decision. Review found `lib/homing`'s `BACK_OFF` phase drives *toward* LIM_NEAR using only a step count (`back_off_steps`, itself still unset) to detect overtravel -- with the global rule suspended, nothing anywhere would catch a LIM_NEAR overtravel during `BACK_OFF`. **Approved narrowing:** LIM_NEAR is never suspended, even during homing; only LIM_FAR gets the homing carve-out. Turned out simpler to implement than the broad version -- no homing-phase granularity needed in `core_safety` at all, just `core_state != HOMING`.
+3. **Fixed with Mathew's input -- required a change to `lib/homing`, not just `core_safety`.** `SLOW_REAPPROACH` used to go straight to `DONE` the instant LIM_FAR tripped, meaning every successful homing cycle finished sitting on an actively-tripped switch. Since the LIM_FAR carve-out only applies while `core_state == HOMING`, the very next core-safety tick after `HOMING_DONE` moves state to IDLE would see the still-tripped switch with no carve-out left -- an near-guaranteed self-fault after every homing cycle, with no implemented recovery path (no FAULT-state jog event exists). **Approved fix:** added a fifth `homing::Phase::RELEASE` between `SLOW_REAPPROACH` and `DONE` -- backs off (`TOWARD_LIM_NEAR`, at `slow_hz`) until LIM_FAR reads inactive again, *then* reports `DONE`. This moves where "zero" physically ends up: the switch's release point, not its trip point -- a small, real, deliberate change to homing's physical behavior, not just an internal bookkeeping fix. 4 new `test_homing` cases cover the new phase; existing tests that reached `DONE` directly from a single LIM_FAR trip were updated to go through `RELEASE` first.
+
+**Caught by `-Werror`, not by review:** adding `Phase::RELEASE` to the enum without updating `motion_controller.cpp`'s `sequencing()` switch would have silently stopped `motion_controller` from ever advancing `homing_seq` past `SLOW_REAPPROACH` (treating `RELEASE` as "not homing" and leaving the stepper running in whatever state it was in) -- `-Wswitch` on the Teensy build caught the missing case as a compile error before it could ship. A reminder that `homing::Phase`'s exhaustive switches live in multiple files now (`homing.cpp`, `motion_controller.cpp`) and need updating together.
+
+**Re-review: OK.** All three fixes independently traced against the actual code (not this summary) and confirmed correct, including walking through the exact moment `HOMING_DONE` fires to confirm LIM_FAR is genuinely inactive by then -- the self-fault window is closed, not just moved later. Confirmed the new `SLOW_REAPPROACH -> RELEASE` direction reversal is caught correctly by the existing (phase-agnostic) `motion_guard::DirectionTracker` stop-before-reversal logic, same as the original bug's transitions. One MINOR note, addressed: `test_motion_guard`'s `test_full_homing_direction_sequence` -- the designated regression guard for this exact hazard class -- hadn't been extended to cover the new RELEASE transition. Extended it (now covers all five phases' direction changes).
+
+126 native tests, cppcheck clean, both Teensy builds succeed.
+
 ## 2026-10-26
 
 ### Issue #9 closed; #11 unblocked

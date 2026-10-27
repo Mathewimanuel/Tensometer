@@ -98,13 +98,40 @@ static void test_slow_reapproach_direction_and_rate() {
     TEST_ASSERT_TRUE(s.cruise_hz() == 500);  // slow_hz
 }
 
-static void test_slow_reapproach_to_done_on_limit() {
+static void test_slow_reapproach_to_release_on_limit() {
     Sequencer s;
     s.start(params());
     s.tick(10000, true);
     s.tick(9900, false);
     TEST_ASSERT_TRUE(s.tick(9950, false) == Phase::SLOW_REAPPROACH);  // not there yet
-    TEST_ASSERT_TRUE(s.tick(10000, true) == Phase::DONE);
+    TEST_ASSERT_TRUE(s.tick(10000, true) == Phase::RELEASE);
+    TEST_ASSERT_FALSE(s.done());
+    TEST_ASSERT_TRUE(s.direction() == Dir::TOWARD_LIM_NEAR);
+    TEST_ASSERT_TRUE(s.cruise_hz() == 500);  // slow_hz, same careful rate as SLOW_REAPPROACH
+}
+
+// RELEASE waits for the switch to actually clear, not for any particular distance or
+// position -- flickering/staying tripped must not advance it.
+static void test_release_waits_for_the_switch_to_clear() {
+    Sequencer s;
+    s.start(params());
+    s.tick(10000, true);
+    s.tick(9900, false);
+    s.tick(10000, true);  // -> RELEASE
+    TEST_ASSERT_TRUE(s.phase() == Phase::RELEASE);
+
+    TEST_ASSERT_TRUE(s.tick(10001, true) == Phase::RELEASE);
+    TEST_ASSERT_TRUE(s.tick(10002, true) == Phase::RELEASE);
+}
+
+static void test_release_to_done_once_switch_clears() {
+    Sequencer s;
+    s.start(params());
+    s.tick(10000, true);
+    s.tick(9900, false);
+    s.tick(10000, true);         // -> RELEASE
+    TEST_ASSERT_TRUE(s.tick(10001, true) == Phase::RELEASE);   // still tripped
+    TEST_ASSERT_TRUE(s.tick(10002, false) == Phase::DONE);     // switch clears -> done
     TEST_ASSERT_TRUE(s.done());
     TEST_ASSERT_TRUE(s.cruise_hz() == 0);
 }
@@ -114,7 +141,8 @@ static void test_done_is_sticky_until_restart() {
     s.start(params());
     s.tick(10000, true);
     s.tick(9900, false);
-    s.tick(10000, true);
+    s.tick(10000, true);   // -> RELEASE
+    s.tick(10001, false);  // -> DONE
     TEST_ASSERT_TRUE(s.done());
 
     TEST_ASSERT_TRUE(s.tick(10000, false) == Phase::DONE);
@@ -127,9 +155,10 @@ static void test_accel_and_steps_remaining_zero_outside_a_cycle() {
     TEST_ASSERT_TRUE(s.steps_remaining(12345) == 0);
 
     s.start(params());
-    s.tick(10000, true);  // -> BACK_OFF
-    s.tick(9900, false);  // -> SLOW_REAPPROACH
-    s.tick(10000, true);  // -> DONE
+    s.tick(10000, true);   // -> BACK_OFF
+    s.tick(9900, false);   // -> SLOW_REAPPROACH
+    s.tick(10000, true);   // -> RELEASE
+    s.tick(10001, false);  // -> DONE
     TEST_ASSERT_TRUE(s.done());
     TEST_ASSERT_TRUE(s.accel_hz_per_s() == 0);
     TEST_ASSERT_TRUE(s.steps_remaining(10000) == 0);
@@ -143,6 +172,8 @@ static void test_accel_is_nonzero_while_homing() {
     TEST_ASSERT_TRUE(s.accel_hz_per_s() == 6000);  // BACK_OFF
     s.tick(9900, false);
     TEST_ASSERT_TRUE(s.accel_hz_per_s() == 6000);  // SLOW_REAPPROACH
+    s.tick(10000, true);
+    TEST_ASSERT_TRUE(s.accel_hz_per_s() == 6000);  // RELEASE
 }
 
 static void test_steps_remaining_is_unbounded_outside_back_off() {
@@ -152,6 +183,8 @@ static void test_steps_remaining_is_unbounded_outside_back_off() {
     s.tick(10000, true);
     s.tick(9900, false);  // -> SLOW_REAPPROACH
     TEST_ASSERT_TRUE(s.steps_remaining(9900) == motion::UNBOUNDED_STEPS);
+    s.tick(10000, true);  // -> RELEASE
+    TEST_ASSERT_TRUE(s.steps_remaining(10000) == motion::UNBOUNDED_STEPS);
 }
 
 static void test_steps_remaining_counts_down_during_back_off() {
@@ -190,6 +223,7 @@ static void test_abort_is_a_no_op_outside_a_cycle() {
     s.tick(10000, true);
     s.tick(9900, false);
     s.tick(10000, true);
+    s.tick(10001, false);
     TEST_ASSERT_TRUE(s.done());
     s.abort();
     TEST_ASSERT_TRUE(s.phase() == Phase::IDLE);  // not DONE anymore, but harmless either way
@@ -213,6 +247,7 @@ static void test_restart_from_done_resets_baseline() {
     s.tick(10000, true);
     s.tick(9900, false);
     s.tick(10000, true);
+    s.tick(10001, false);
     TEST_ASSERT_TRUE(s.done());
 
     s.start(params());
@@ -235,7 +270,9 @@ int main() {
     RUN_TEST(test_back_off_overshoot_still_transitions);
     RUN_TEST(test_back_off_ignores_lim_far_reasserting);
     RUN_TEST(test_slow_reapproach_direction_and_rate);
-    RUN_TEST(test_slow_reapproach_to_done_on_limit);
+    RUN_TEST(test_slow_reapproach_to_release_on_limit);
+    RUN_TEST(test_release_waits_for_the_switch_to_clear);
+    RUN_TEST(test_release_to_done_once_switch_clears);
     RUN_TEST(test_done_is_sticky_until_restart);
     RUN_TEST(test_restart_from_done_resets_baseline);
     RUN_TEST(test_abort_mid_cycle_returns_to_idle);

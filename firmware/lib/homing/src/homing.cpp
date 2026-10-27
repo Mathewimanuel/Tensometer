@@ -8,6 +8,7 @@ Dir Sequencer::direction() const {
         case Phase::SLOW_REAPPROACH:
             return Dir::TOWARD_LIM_FAR;
         case Phase::BACK_OFF:
+        case Phase::RELEASE:
             return Dir::TOWARD_LIM_NEAR;
         case Phase::IDLE:
         case Phase::DONE:
@@ -22,6 +23,7 @@ uint32_t Sequencer::cruise_hz() const {
         case Phase::BACK_OFF:
             return params_.fast_hz;
         case Phase::SLOW_REAPPROACH:
+        case Phase::RELEASE:
             return params_.slow_hz;
         case Phase::IDLE:
         case Phase::DONE:
@@ -35,6 +37,7 @@ uint32_t Sequencer::accel_hz_per_s() const {
         case Phase::FAST_APPROACH:
         case Phase::BACK_OFF:
         case Phase::SLOW_REAPPROACH:
+        case Phase::RELEASE:
             return params_.accel_hz_per_s;
         case Phase::IDLE:
         case Phase::DONE:
@@ -47,6 +50,7 @@ uint32_t Sequencer::steps_remaining(int32_t position_steps) const {
     switch (phase_) {
         case Phase::FAST_APPROACH:
         case Phase::SLOW_REAPPROACH:
+        case Phase::RELEASE:
             return motion::UNBOUNDED_STEPS;
 
         case Phase::BACK_OFF: {
@@ -95,6 +99,12 @@ Phase Sequencer::tick(int32_t position_steps, bool lim_far_active) {
 
         case Phase::SLOW_REAPPROACH:
             if (lim_far_active) {
+                phase_ = Phase::RELEASE;
+            }
+            break;
+
+        case Phase::RELEASE:
+            if (!lim_far_active) {
                 phase_ = Phase::DONE;
             }
             break;

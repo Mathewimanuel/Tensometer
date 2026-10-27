@@ -50,9 +50,15 @@ static void test_reset_forgets_the_tracked_direction() {
     TEST_ASSERT_TRUE(t.needs_stop_before(Dir::A, true));
 }
 
-// Mirrors the exact sequence that produced the CRITICAL bug: FAST_APPROACH (Dir::A) ->
-// BACK_OFF (Dir::B) -> SLOW_REAPPROACH (Dir::A again) -> DONE, each transition commanded
-// without the caller stopping in between unless this class says to.
+// Mirrors the exact sequence that produced the CRITICAL bug, extended to all five homing
+// phases: FAST_APPROACH (Dir::A) -> BACK_OFF (Dir::B) -> SLOW_REAPPROACH (Dir::A) ->
+// RELEASE (Dir::B) -> DONE, each transition commanded without the caller stopping in
+// between unless this class says to. RELEASE was added after this test was first written
+// (docs/decisions.md 2026-10-27) specifically to fix homing finishing on an actively-
+// tripped switch; it is itself another direction reversal (same hazard class), so it
+// belongs in the same regression guard as the original BACK_OFF/SLOW_REAPPROACH ones --
+// this is the only thing in CI that would catch a future motion_controller.cpp change that
+// special-cased RELEASE to skip the stop-before-reversal check.
 static void test_full_homing_direction_sequence() {
     DirectionTracker t;
 
@@ -81,6 +87,15 @@ static void test_full_homing_direction_sequence() {
 
     // SLOW_REAPPROACH continues: same direction, no stop.
     TEST_ASSERT_FALSE(t.needs_stop_before(Dir::A, true));
+    t.record_commanded(Dir::A);
+
+    // LIM_FAR trips again -> RELEASE (Dir::B): yet another reversal, while still
+    // physically moving the SLOW_REAPPROACH way -- must be caught exactly like the others.
+    TEST_ASSERT_TRUE(t.needs_stop_before(Dir::B, true));
+    t.record_commanded(Dir::B);
+
+    // RELEASE continues (backing off) until the switch clears: same direction, no stop.
+    TEST_ASSERT_FALSE(t.needs_stop_before(Dir::B, true));
 }
 
 int main() {
