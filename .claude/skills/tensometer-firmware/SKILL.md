@@ -264,7 +264,7 @@ No step may block. Anything slow is split into slices.
    - watchdog reset detected at boot (report, stay IDLE);
    - motion requested while any motion-inhibit bit is set;
    - any module `safety_check()` fault;
-   - GUARD_SENSE open while a run-to-break test is armed, **only if `cfg::GUARD_INTERLOCK_FITTED` is true** (currently false — not fitted, decided 2026-10-26);
+   - GUARD_SENSE open while a run-to-break test is armed (here, "armed" means a test session is active, READY and beyond -- unrelated to `core_sm::StateMachine::arming()`'s narrower ARM-to-L0_REACHED flag, confirm with Mathew before `lib/core_safety`'s caller is built), **only if `cfg::GUARD_INTERLOCK_FITTED` is true** (currently false — not fitted, decided 2026-10-26);
    - **slip suspect:** while extending, force > 80% of the profile's coupler slip force and force change < 1% over >= 2 mm commanded travel (clear `position_valid`);
    - homing force guard (3.4).
 3. FAULT clears only by explicit RESET after the cause is gone. Never auto-restart motion. If `position_valid` was cleared, re-home before RUN.
@@ -450,7 +450,7 @@ Stall and coupler tests only on the 500 kg profile with a steel dummy.
 - Jaw gap at home position (calibration constant).
 - Homing speeds/accel/back-off distance (`homing::Params`) are still OPEN -- no values set anywhere, caller-supplied only. Not bounds-checked against `cfg::STEP_RATE_MAX_HZ` yet either (decisions.md 2026-10-26); a misconfigured value above the cap wouldn't fail at homing start, only mid-approach.
 - `lib/core_safety` (issue #11, slice 1, 2026-10-27) implements the limit-switch-vs-homing carve-out and inhibit-mask-vs-motion checks as pure logic, but is **not yet wired into `main.cpp`**. The carve-out is narrower than first decided: only LIM_FAR is suspended during `HOMING`, never LIM_NEAR (homing's `BACK_OFF` phase drives toward LIM_NEAR with only a step count watching it, so that switch always faults). `lib/homing` gained a fifth phase, `RELEASE`, that backs off LIM_FAR until it reads inactive before reporting `DONE` -- "zero" is now the switch's release point, not its trip point.
-- Everything else in section 4 (force cutoff, e-stop sense, heartbeat, stale sensor, watchdog, slip-suspect, GUARD_SENSE, soft travel limits) is still unimplemented -- `lib/core_safety` only has the two rules above.
+- `lib/core_safety` (2026-10-27, slice 2) now also implements e-stop, module-fault aggregation, GUARD_SENSE, soft travel limit, strain limit and heartbeat-stale. Still missing: force cutoff, HX711-stale, slip-suspect (all need real force data, blocked on #10) and watchdog-reset-at-boot (a one-shot boot check, belongs in `setup()` not here). The GUARD_SENSE "fires when fitted" branch has no test coverage anywhere and can't get any until `cfg::GUARD_INTERLOCK_FITTED` actually flips true (it's a compile-time constexpr) -- add that test the same day the flag changes. The heartbeat-vs-inhibit-mask priority ordering (which cause gets logged when both fire the same tick) is confirmed as-is by Mathew (heartbeat first) -- see `core_safety.h`.
 - Continuity front-end schematic and phase 2 board connector pinout.
 - Siglent AWG option (PC side).
 - Ramp acceleration for the motion planner: no moving-assembly inertia data exists yet, so no value is set anywhere; propose tuning conservatively at bench bring-up step 4 (section 13), not inventing a number now.

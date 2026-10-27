@@ -19,6 +19,18 @@ First code for issue #11 (safety module), scoped deliberately narrow: just the t
 
 126 native tests, cppcheck clean, both Teensy builds succeed.
 
+### `lib/core_safety` slice 2: five more section-4 rules, two MAJOR findings fixed
+Added e-stop, module-fault aggregation, GUARD_SENSE, soft travel limit, strain limit, and heartbeat-stale to `evaluate()`. Still out of scope: force cutoff, HX711-stale, slip-suspect (need #10) and watchdog-at-boot (a one-shot check, not a per-tick rule).
+
+`firmware-reviewer`: CHANGES REQUESTED first round, fixed and re-confirmed OK:
+- **GUARD_SENSE's `cfg::GUARD_INTERLOCK_FITTED` gate** was pushed to an untested caller as one pre-folded bool, inconsistent with how the heartbeat gate works. Fixed: `evaluate()` now applies the AND itself on two raw inputs (`guard_sense_active`, `run_to_break_armed`). Note: the "fires when fitted" branch has no test coverage and can't get any until the flag flips (it's compile-time false) -- add that test the day it changes.
+- **"Soft travel limit" and "strain limit"** were one bool/`FaultReason`, losing which one actually tripped (skill rule 9 requires a specific logged cause). Split into two of each.
+- Priority reordered: `GUARD_SENSE_OPEN` now checked before `MODULE_FAULT` (a bypassed guard interlock is more diagnostically relevant than a generic module fault).
+
+Two things Mathew confirmed directly, not guessed: "armed" in the GUARD_SENSE rule means a test session is active (READY+), not `core_sm::arming()`'s narrower flag; and `HEARTBEAT_LOST` stays checked before `MOTION_WHILE_INHIBITED` (a stale heartbeat is its own serious concern regardless of what else is true that tick).
+
+138 native tests, cppcheck clean, both Teensy builds succeed. Not yet wired into main.cpp -- `core_safety` isn't in either Teensy build's dependency graph yet since nothing in `src/` calls it.
+
 ## 2026-10-26
 
 ### Issue #9 closed; #11 unblocked

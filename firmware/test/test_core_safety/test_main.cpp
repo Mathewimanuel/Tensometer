@@ -119,6 +119,118 @@ static void test_limit_switch_takes_priority_when_both_fire() {
     TEST_ASSERT_TRUE(evaluate(in) == FaultReason::LIMIT_SWITCH_OPEN);
 }
 
+static void test_estop_trips() {
+    Inputs in{};
+    in.core_state = CoreState::RUN;
+    in.estop_active = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::ESTOP);
+}
+
+// E-stop wins over everything, including a limit switch tripping at the same instant.
+static void test_estop_takes_priority_over_everything() {
+    Inputs in{};
+    in.core_state = CoreState::RUN;
+    in.estop_active = true;
+    in.lim_far_active = true;
+    in.guard_sense_active = true;
+    in.run_to_break_armed = true;
+    in.module_fault_present = true;
+    in.soft_travel_limit_exceeded = true;
+    in.strain_limit_exceeded = true;
+    in.motion_active = true;
+    in.heartbeat_stale = true;
+    in.inhibit_mask = 0x1;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::ESTOP);
+}
+
+// E-stop is never suspended by the homing carve-out either -- that carve-out is specific
+// to the limit-switch rule.
+static void test_estop_trips_during_homing() {
+    Inputs in{};
+    in.core_state = CoreState::HOMING;
+    in.estop_active = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::ESTOP);
+}
+
+static void test_module_fault_trips() {
+    Inputs in{};
+    in.core_state = CoreState::IDLE;
+    in.module_fault_present = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::MODULE_FAULT);
+}
+
+static void test_module_fault_takes_priority_over_travel_and_strain_limits() {
+    Inputs in{};
+    in.core_state = CoreState::IDLE;
+    in.module_fault_present = true;
+    in.soft_travel_limit_exceeded = true;
+    in.strain_limit_exceeded = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::MODULE_FAULT);
+}
+
+// GUARD_INTERLOCK_FITTED is a compile-time constexpr, currently false, applied inside
+// evaluate() itself (not folded into a caller bool -- firmware-reviewer flagged the
+// earlier design, where the caller had to remember the AND, as exactly the kind of gap
+// that stays invisible until the day the interlock is actually fitted). This is the
+// regression test for that: even with both inputs that would otherwise mean "guard open
+// during an armed test" set true, nothing trips while the interlock isn't fitted.
+static void test_guard_sense_never_trips_while_interlock_not_fitted() {
+    Inputs in{};
+    in.core_state = CoreState::IDLE;
+    in.guard_sense_active = true;
+    in.run_to_break_armed = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::NONE);
+}
+
+static void test_soft_travel_limit_trips() {
+    Inputs in{};
+    in.core_state = CoreState::RUN;
+    in.soft_travel_limit_exceeded = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::SOFT_TRAVEL_LIMIT);
+}
+
+static void test_strain_limit_trips() {
+    Inputs in{};
+    in.core_state = CoreState::RUN;
+    in.strain_limit_exceeded = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::STRAIN_LIMIT);
+}
+
+static void test_soft_travel_limit_takes_priority_over_strain_limit() {
+    Inputs in{};
+    in.core_state = CoreState::RUN;
+    in.soft_travel_limit_exceeded = true;
+    in.strain_limit_exceeded = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::SOFT_TRAVEL_LIMIT);
+}
+
+static void test_heartbeat_stale_trips_while_moving() {
+    Inputs in{};
+    in.core_state = CoreState::RUN;
+    in.motion_active = true;
+    in.heartbeat_stale = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::HEARTBEAT_LOST);
+}
+
+// Skill 4 rule 2 says "while moving" -- a stale heartbeat with nothing in motion must not
+// trip (e.g. the PC is slow to reconnect while the machine just sits in IDLE).
+static void test_heartbeat_stale_does_not_trip_without_motion() {
+    Inputs in{};
+    in.core_state = CoreState::IDLE;
+    in.motion_active = false;
+    in.heartbeat_stale = true;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::NONE);
+}
+
+static void test_heartbeat_takes_priority_over_inhibit_mask() {
+    Inputs in{};
+    in.core_state = CoreState::RUN;
+    in.motion_active = true;
+    in.heartbeat_stale = true;
+    in.inhibit_mask = 0x1;
+    TEST_ASSERT_TRUE(evaluate(in) == FaultReason::HEARTBEAT_LOST);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_no_trip_when_nothing_is_wrong);
@@ -134,5 +246,17 @@ int main() {
     RUN_TEST(test_motion_alone_does_not_trip_without_inhibit);
     RUN_TEST(test_inhibit_mask_still_trips_during_homing);
     RUN_TEST(test_limit_switch_takes_priority_when_both_fire);
+    RUN_TEST(test_estop_trips);
+    RUN_TEST(test_estop_takes_priority_over_everything);
+    RUN_TEST(test_estop_trips_during_homing);
+    RUN_TEST(test_module_fault_trips);
+    RUN_TEST(test_module_fault_takes_priority_over_travel_and_strain_limits);
+    RUN_TEST(test_guard_sense_never_trips_while_interlock_not_fitted);
+    RUN_TEST(test_soft_travel_limit_trips);
+    RUN_TEST(test_strain_limit_trips);
+    RUN_TEST(test_soft_travel_limit_takes_priority_over_strain_limit);
+    RUN_TEST(test_heartbeat_stale_trips_while_moving);
+    RUN_TEST(test_heartbeat_stale_does_not_trip_without_motion);
+    RUN_TEST(test_heartbeat_takes_priority_over_inhibit_mask);
     return UNITY_END();
 }
