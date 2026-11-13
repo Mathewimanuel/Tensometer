@@ -125,7 +125,7 @@ Rules:
 - Supply 3.3 V from a **dedicated low-noise LDO** (not the Teensy 3.3 V rail). Gain 128, channel A. **80 SPS** (RATE pin high; verify on the board).
 - Expect 1 to 2 fewer usable bits at 80 SPS than at 10 SPS. Measure the noise floor; do not assume 16 bits.
 - Wiring: red E+, black E-, green A+, white A-, shield to AGND at the HX711 end only.
-- **Power-down trap:** SCK high > 60 us powers the chip down and corrupts the read. Do NOT disable interrupts for the whole 25-bit read. Keep each SCK-high phase ~1 us and guarantee every ISR finishes in < 20 us.
+- **Power-down trap:** SCK high > 60 us powers the chip down and corrupts the read. Do NOT disable interrupts for the whole 25-bit read. Keep each SCK-high phase ~1 us, wrapped in its own interrupt-free critical section (decided 2026-11-13, issue #2; see section 3.2) -- not a reliance on every other ISR staying under some budget.
 - Timestamp each sample with a DOUT falling-edge interrupt (timestamp only). Disable that interrupt while reading, because DOUT toggles during the shift.
 - Each sample averages the previous 12.5 ms. Effective sample time = DOUT timestamp - 6.25 ms.
 - Calibration factor comes from hanging known masses, never from the datasheet alone.
@@ -211,9 +211,8 @@ LIM_NEAR = end near the stationary jaws (minimum gap). LIM_FAR = motor end (maxi
 | HX711 DOUT falling | 80 Hz | < 2 us | Timestamp only | Core |
 
 Rules:
-- No ISR longer than 20 us (HX711 power-down trap).
-- The step ISR is the only place allowed a busy-wait (<= `STEP_PULSE_US`, 5 us). Nowhere else. At 20 kHz this is ~10% CPU.
-- OPEN (proposed, not yet approved): replace the "every ISR < 20 us" rule with interrupt-free critical sections only around each HX711 SCK-high phase (~1.5 us), because library ISRs (USB, SDIO) cannot be guaranteed under 20 us.
+- All our own ISRs stay well under 20 us by design (see budgets above) -- but that alone does not protect the HX711 power-down trap, because Teensyduino's own USB and SDIO interrupt handlers are not ours to bound. **Approved (decided 2026-11-13, issue #2 closed):** the HX711 driver wraps only each SCK-high phase (~1.5 us), not the whole 25-bit read, in a real interrupt-free critical section (`noInterrupts()`/`__disable_irq()`). That is the actual guarantee against the power-down trap; a blanket "every ISR < 20 us" rule was never enforceable against library ISRs and is retired.
+- The step ISR is the only place allowed a busy-wait (<= `STEP_PULSE_US`, 5 us). Nowhere else. At 20 kHz this is ~10% CPU. The ~1.5 us HX711 critical section is negligible against the step ISR's 50 us period at the 20 kHz cap and against limit/e-stop response time.
 - ISRs never allocate, print, call Serial, touch SD or I2C, or do floating-point division.
 - Shared ISR/loop data: `volatile`; multi-word reads with interrupts briefly off or a sequence counter. Ring buffers single-producer single-consumer.
 

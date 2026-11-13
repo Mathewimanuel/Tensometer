@@ -2,6 +2,15 @@
 
 Newest first. Each entry: date, decision, reason, status. Anything marked PROPOSED is not approved; ask Mathew before acting on it.
 
+## 2026-11-13
+
+### Issue #2 decided: HX711 critical sections replace the blanket "every ISR < 20 us" rule
+**Approved.** The blanket rule was never actually enforceable: our own ISRs are all well under 20 us already (step <7 us, limit/e-stop <5 us, HX711 DOUT timestamp <2 us), so the rule was never bounding our code. The real risk to the HX711 power-down trap is Teensyduino's own USB and SDIO interrupt handlers, which we don't write and can't bound to any duration -- a library ISR running long is exactly the failure the rule couldn't actually prevent.
+
+Replacement: a real interrupt-free critical section (`noInterrupts()`/`__disable_irq()`) around just each SCK-high phase (~1.5 us), not the whole 25-bit read. Nothing can preempt that window regardless of what USB/SD are doing. Cost is a ~1.5 us gap elsewhere per phase -- negligible against the step ISR's 50 us period at the 20 kHz cap (one pulse edge lands slightly late, not missed) and negligible for limit/e-stop response time.
+
+Closes #2. Unblocks #10 (HX711 driver) to be scoped against this rule.
+
 ## 2026-10-27
 
 ### `lib/core_safety` added: first slice of #11, two real gaps found and fixed
