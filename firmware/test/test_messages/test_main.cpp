@@ -258,6 +258,32 @@ static void test_arm_decode_rejects_truncated_buffer() {
                            static_cast<int>(messages::decode_arm(buf, len - 1, &out)));
 }
 
+static void test_preload_round_trip() {
+    proto::PreloadBody in{150000, 10};  // 150 N at 10 mm/min
+    uint8_t buf[proto::PRELOAD_WIRE_LEN];
+    size_t len = 0;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::encode_preload(in, buf, sizeof(buf), &len)));
+    TEST_ASSERT_EQUAL_UINT32(proto::PRELOAD_WIRE_LEN, len);
+
+    proto::PreloadBody out{};
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::decode_preload(buf, len, &out)));
+    TEST_ASSERT_EQUAL_UINT32(in.threshold_mN, out.threshold_mN);
+    TEST_ASSERT_EQUAL_UINT16(in.approach_mm_per_min, out.approach_mm_per_min);
+}
+
+static void test_preload_decode_rejects_truncated_buffer() {
+    proto::PreloadBody in{150000, 10};
+    uint8_t buf[proto::PRELOAD_WIRE_LEN];
+    size_t len = 0;
+    messages::encode_preload(in, buf, sizeof(buf), &len);
+
+    proto::PreloadBody out{};
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::TOO_SHORT),
+                           static_cast<int>(messages::decode_preload(buf, len - 1, &out)));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_hello_round_trip);
@@ -277,5 +303,7 @@ int main() {
     RUN_TEST(test_jog_stop_round_trip);
     RUN_TEST(test_arm_round_trip);
     RUN_TEST(test_arm_decode_rejects_truncated_buffer);
+    RUN_TEST(test_preload_round_trip);
+    RUN_TEST(test_preload_decode_rejects_truncated_buffer);
     return UNITY_END();
 }

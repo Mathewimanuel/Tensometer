@@ -67,4 +67,9 @@ Result decode_jog(const uint8_t* in, size_t in_len, proto::JogBody* out);
 Result encode_arm(const proto::ArmBody& body, uint8_t* out, size_t out_cap, size_t* out_len);
 Result decode_arm(const uint8_t* in, size_t in_len, proto::ArmBody* out);
 
+// ---- Command bodies (0.4, slice 2 of 3) ----------------------------------------------
+Result encode_preload(const proto::PreloadBody& body, uint8_t* out, size_t out_cap,
+                       size_t* out_len);
+Result decode_preload(const uint8_t* in, size_t in_len, proto::PreloadBody* out);
+
 }  // namespace messages

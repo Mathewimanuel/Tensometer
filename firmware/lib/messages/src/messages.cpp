@@ -294,4 +294,23 @@ Result decode_arm(const uint8_t* in, size_t in_len, proto::ArmBody* out) {
     return Result::OK;
 }
 
+Result encode_preload(const proto::PreloadBody& body, uint8_t* out, size_t out_cap,
+                       size_t* out_len) {
+    if (out == nullptr || out_len == nullptr) return Result::BAD_ARG;
+    Writer w(out, out_cap);
+    const bool ok = w.put_u32(body.threshold_mN) && w.put_u16(body.approach_mm_per_min);
+    if (!ok) return Result::NO_SPACE;
+    *out_len = w.len();
+    return Result::OK;
+}
+
+Result decode_preload(const uint8_t* in, size_t in_len, proto::PreloadBody* out) {
+    if (in == nullptr || out == nullptr) return Result::BAD_ARG;
+    if (in_len != proto::PRELOAD_WIRE_LEN) return Result::TOO_SHORT;
+    Reader r(in, in_len);
+    const bool ok = r.get_u32(&out->threshold_mN) && r.get_u16(&out->approach_mm_per_min);
+    if (!ok) return Result::TOO_SHORT;
+    return Result::OK;
+}
+
 }  // namespace messages

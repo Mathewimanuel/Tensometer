@@ -4,6 +4,11 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-13
 
+### `protocol.h` 0.4: `CMD_PRELOAD`, slice 2 of 3
+`PreloadBody{threshold_mN: u32, approach_mm_per_min: u16}`, ID `0x2A`. Same `homed_and_valid`/IDLE-READY guard as JOG/TARE (skill rev 5). Reuses `cfg::JOG_LOADED_MAX_MM_PER_MIN` (10 mm/min) as the approach-speed cap rather than a dedicated constant -- confirmed with Mathew: preload approach is the same kind of slow, loaded creep as a loaded jog, so one bench-tuned constant covers both rather than two that could drift apart. `threshold_mN` and `approach_mm_per_min` are genuinely PC-tunable per test (not fixed firmware constants like homing's force guard), specifically so knit fabric, ABS and neoprene can each get an appropriate preload force without a firmware rebuild -- the PC app's GUI is expected to offer a few preset buttons for common materials, but that's a software-layer convenience, not a protocol concern.
+
+153 native tests (was 151; `lib/messages` gained 2), cppcheck clean, both Teensy builds succeed. `PreloadBody.threshold_mN`'s "<= active profile's cutoff_mN" NACK and `approach_mm_per_min`'s cap are documented contracts, not yet enforced anywhere -- same already-accepted gap as slice 1 (no dispatcher exists yet).
+
 ### `protocol.h` 0.3: core command bodies, slice 1 of 3
 Building the `software/` PC app (previous entry) forced the DRAFT `CMD_*` bodies to actually get defined. Full command set worked out with Mathew across several rounds; implemented in three slices to keep each `firmware-reviewer` pass focused on one reviewable diff rather than one giant one. This entry is slice 1.
 

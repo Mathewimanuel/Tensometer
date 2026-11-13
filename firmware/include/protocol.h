@@ -1,7 +1,7 @@
 // Wire protocol shared with the PC app (skill section 8). Core message bodies (HELLO,
 // ACK/NACK, HEARTBEAT, TELEMETRY, EVENT) are defined below (0.2). CMD_* bodies, slice 1
 // of 3 (0.3, docs/decisions.md): SELECT_PROFILE, HOME, JOG, TARE, ARM (RUN mode only),
-// START, PAUSE, RESUME, STOP, RESET. Still DRAFT: CMD_PRELOAD (slice 2) and ARM's CYCLE
+// START, PAUSE, RESUME, STOP, RESET. Slice 2 (0.4): PRELOAD. Still DRAFT: ARM's CYCLE
 // mode + its config fields (slice 3). Any change here must be mirrored on the Python
 // side and bump PROTOCOL_VERSION (minor for additive, major for breaking).
 //
@@ -20,7 +20,7 @@
 namespace proto {
 
 constexpr uint8_t VERSION_MAJOR = 0;
-constexpr uint8_t VERSION_MINOR = 3;
+constexpr uint8_t VERSION_MINOR = 4;
 
 // Frame payload (before COBS): msg_id u8 | seq u8 | body | crc16 u16 (little-endian).
 constexpr uint16_t MAX_BODY_LEN = 240;
@@ -30,8 +30,7 @@ constexpr uint8_t ID_CORE_FIRST = 0x00, ID_CORE_LAST = 0x3F;
 constexpr uint8_t ID_CONTINUITY_FIRST = 0x40, ID_CONTINUITY_LAST = 0x5F;
 constexpr uint8_t ID_ROUTING_FIRST = 0x60, ID_ROUTING_LAST = 0x6F;
 
-// ---- Core message IDs. All bodies defined (0.3) except CMD_PRELOAD, not yet assigned
-// an ID (slice 2) -------------------------------------------------------------------
+// ---- Core message IDs. All bodies defined (0.4) -------------------------------------
 enum class MsgId : uint8_t {
     HELLO = 0x01,
     ACK = 0x02,
@@ -49,6 +48,7 @@ enum class MsgId : uint8_t {
     CMD_TARE = 0x27,
     CMD_RESET = 0x28,
     CMD_SELECT_PROFILE = 0x29,
+    CMD_PRELOAD = 0x2A,
 };
 
 // ---- Capability bits (HELLO) --------------------------------------------------------
@@ -246,5 +246,23 @@ struct ArmBody {
     uint8_t reserved;                   // must be 0; reject nonzero once a use is assigned
 };
 constexpr size_t ARM_WIRE_LEN = 4 + 2 + 4 + 4 + 2 + 1 + 1;  // 18
+
+// PRELOAD (0.4, slice 2 of 3 -- docs/decisions.md). Same homed_and_valid/IDLE-READY
+// guard as JOG/TARE (skill rev 5: "same precondition as JOG/TARE"); reuses the
+// homing-style force-guard pattern (creep at a slow speed, controlled stop at a force
+// threshold) rather than a new motion primitive.
+struct PreloadBody {
+    uint32_t threshold_mN;          // > 0; NACK OUT_OF_RANGE if > the active profile's cutoff_mN
+    uint16_t approach_mm_per_min;   // > 0; NACK OUT_OF_RANGE if > cfg::JOG_LOADED_MAX_MM_PER_MIN
+                                      // -- reusing that cap rather than a dedicated constant:
+                                      // preload approach is the same kind of slow, loaded
+                                      // creep as a loaded jog (Mathew, 2026-11-13)
+};
+constexpr size_t PRELOAD_WIRE_LEN = 4 + 2;  // 6
+// PRELOAD_START NACKs: Err::NOT_HOMED, Err::BAD_STATE (not IDLE/READY),
+// Err::MOTION_INHIBITED (on #11's per-event inhibit-enforcement list), Err::OUT_OF_RANGE
+// (threshold_mN or approach_mm_per_min out of range, per field comments above). Threshold
+// reached / PRELOAD_DONE is caller logic (future motion_controller), same as homing's own
+// force guard -- this file only defines the wire contract.
 
 }  // namespace proto
