@@ -12,14 +12,14 @@ jobs:
     # The flash-blocking hook must keep working; its self-test runs on every push.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash .claude/hooks/test-block-flash.sh
 
   static-analysis:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install cppcheck==1.5.3   # cppcheck-wheel, ships Cppcheck 2.22
@@ -39,11 +39,11 @@ jobs:
       run:
         working-directory: firmware
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
@@ -60,11 +60,11 @@ jobs:
       run:
         working-directory: firmware
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
