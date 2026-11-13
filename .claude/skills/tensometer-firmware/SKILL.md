@@ -392,12 +392,15 @@ firmware/
   include/  config.h  safety_limits.h  protocol.h  module_api.h
   src/core/     main.cpp  stepper.cpp  motion_controller.cpp  hx711.cpp  safety.cpp
                 comms.cpp  sdlog.cpp  panel.cpp  oled.cpp  modules.cpp
-  src/modules/  continuity/  routing/  sim_continuity/
+  src/modules/  continuity/  routing/   # sim_continuity has no hardware, so it lives
+                                        # entirely in lib/ instead (see lib/'s README)
   lib/          crc16/  cobs/  frame/  messages/  break_detect/  state_machine/  homing/
-                motion_guard/  continuity_logic/  motion_profile/  slip_check/  config_sections/
+                motion_guard/  core_safety/  sim_continuity/  continuity_logic/  motion_profile/
+                slip_check/  config_sections/
   test/         test_crc16/  test_cobs/  test_frame/  test_messages/  test_break_detect/
-                test_state_machine/  test_homing/  test_motion_guard/  test_continuity/
-                test_profile/  test_slip/  test_config_sections/  test_module_seam/
+                test_state_machine/  test_homing/  test_motion_guard/  test_core_safety/
+                test_sim_continuity/  test_motion_profile/  test_continuity/  test_slip/
+                test_config_sections/
 ```
 
 

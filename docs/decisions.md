@@ -4,6 +4,20 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-13
 
+### `lib/sim_continuity` added for #14; `conductor_events()` hook added to module_api.h
+First module to implement `mod::Module` (skill 1.2). It's a software-only stand-in for the future phase-2 `continuity` module: no hardware, just proves the conductor-event seam into `break_detect` works before any phase-2 hardware exists.
+
+Closed a real gap found while scoping it: SKILL.md's hook table had always listed `conductor_events()`, but `module_api.h`'s actual `mod::Module` struct never had it -- nobody had built a module that needed it yet. Added now, with two things decided as part of adding it, not just mechanically filled in:
+
+1. **Signature carries a channel, not a bare timestamp.** `break_detect::Classifier::push_conductor_open()` only ever needed a timestamp, but Mathew chose to future-proof the hook itself with a `ConductorEvent{channel, timestamp_us}` struct rather than leave it bare -- `channel` is discarded by break detection (timing-only) but available to whatever else eventually reads this seam. Per-channel OPEN/DEGRADED/RECLOSE/SHORT reporting to the PC/SD stays a separate concern (each module's own `emit()`), unaffected by this.
+2. **Appended last, not inserted mid-struct** -- `firmware-reviewer` caught that it had been inserted between `on_state_change` and `emit`, inconsistent with this same file's own stated "append, don't insert" convention for `CoreState`. Fixed.
+
+`firmware-reviewer`, round 1: CHANGES REQUESTED, one MAJOR. The original `src/modules/sim_continuity/` driver and its test had zero coverage of the module's actual vtable wiring -- the test built its own local queue and never touched `sim_continuity::MODULE` or the real `conductor_events` function pointer, so a bug wiring the hook to the wrong queue, or a positional mix-up in the `Module` initializer (several fields share the same `void(*)()` type, so the compiler wouldn't catch a swap), would have passed every test while being wrong. Fixed by moving the whole driver -- `Module` descriptor and all -- into `lib/sim_continuity` (it has no Arduino dependency at all, unlike continuity/routing which will need real `src/` drivers once built) and rewriting the seam test to go through the real singleton: `sim_continuity::inject_open()` -> `sim_continuity::MODULE.conductor_events()` -> `break_detect::Classifier`. `src/modules/sim_continuity/` no longer exists; `src/modules/README.md` and skill section 12 updated to say why.
+
+Also flagged, documented rather than fixed now (both accepted, same pattern as the GUARD_SENSE/`GUARD_INTERLOCK_FITTED` gap in the 2026-10-27 entry below): this stand-in's queue is explicitly main-loop-context only and not ISR-safe, but the real `continuity` module will fill its queue from ADC-DMA-complete ISR context (skill 2.4/3.2) and will need genuine SPSC/volatile protection -- noted in `module_api.h`'s hook comment so nobody copies this queue verbatim; and the hook's documented `nullptr` contract (for modules like routing that never produce conductor events) is completely unexercised since every module that exists today implements it -- add a null-hook test the day a second module exists.
+
+146 native tests, cppcheck clean, both Teensy builds succeed (identical `teensy41` binary size to before -- confirms the module compiles but stays unlinked when `FEATURE_SIM_CONTINUITY=0`, same as any other unreferenced lib). Not wired into any live path -- `main.cpp` is still the stage-1 safe-boot skeleton.
+
 ### Issue #2 decided: HX711 critical sections replace the blanket "every ISR < 20 us" rule
 **Approved.** The blanket rule was never actually enforceable: our own ISRs are all well under 20 us already (step <7 us, limit/e-stop <5 us, HX711 DOUT timestamp <2 us), so the rule was never bounding our code. The real risk to the HX711 power-down trap is Teensyduino's own USB and SDIO interrupt handlers, which we don't write and can't bound to any duration -- a library ISR running long is exactly the failure the rule couldn't actually prevent.
 
@@ -170,4 +184,4 @@ Added as a **separate operator-triggered action**, not folded automatically into
 
 ## Proposed, awaiting approval
 
-- **HX711 critical sections:** replace "every ISR < 20 us" with interrupts disabled only around each SCK-high phase (~1.5 us per bit), because USB and SDIO library ISRs cannot be guaranteed under 20 us.
+(none currently -- HX711 critical sections, the previous entry here, was approved and closed as issue #2 on 2026-11-13; see that entry above.)
