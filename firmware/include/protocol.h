@@ -30,7 +30,8 @@ constexpr uint8_t ID_CORE_FIRST = 0x00, ID_CORE_LAST = 0x3F;
 constexpr uint8_t ID_CONTINUITY_FIRST = 0x40, ID_CONTINUITY_LAST = 0x5F;
 constexpr uint8_t ID_ROUTING_FIRST = 0x60, ID_ROUTING_LAST = 0x6F;
 
-// ---- Core message IDs (draft) ----------------------------------------------------------
+// ---- Core message IDs. All bodies defined (0.3) except CMD_PRELOAD, not yet assigned
+// an ID (slice 2) -------------------------------------------------------------------
 enum class MsgId : uint8_t {
     HELLO = 0x01,
     ACK = 0x02,

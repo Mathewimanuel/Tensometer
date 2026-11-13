@@ -48,6 +48,15 @@ Result decode_event(const uint8_t* in, size_t in_len, proto::EventBody* out);
 
 // ---- Command bodies (0.3, slice 1 of 3). HOME/TARE/START/PAUSE/RESUME/STOP/RESET have
 // empty bodies and need no encode/decode pair -- see protocol.h's command-body comment.
+//
+// The decode_* functions below only check wire shape (exact length, non-null), same as
+// every decode_* above them -- they do NOT enforce the NACK contracts documented next to
+// each body in protocol.h (e.g. Err::OUT_OF_RANGE for an invalid profile_id or a nonzero
+// ArmBody.cycle_mode, Err::NOT_HOMED for JOG). That enforcement belongs to whatever
+// command dispatcher eventually calls these (not written yet -- nothing in src/ref-
+// erences any CMD_* ID or these structs today, per the slice-1 firmware-reviewer pass,
+// 2026-11-13). Do not wire a dispatcher straight off these decode functions without
+// adding that validation layer first.
 Result encode_select_profile(const proto::SelectProfileBody& body, uint8_t* out, size_t out_cap,
                               size_t* out_len);
 Result decode_select_profile(const uint8_t* in, size_t in_len, proto::SelectProfileBody* out);
