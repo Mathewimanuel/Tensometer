@@ -9,6 +9,10 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 153 native tests (was 151; `lib/messages` gained 2), cppcheck clean, both Teensy builds succeed. `PreloadBody.threshold_mN`'s "<= active profile's cutoff_mN" NACK and `approach_mm_per_min`'s cap are documented contracts, not yet enforced anywhere -- same already-accepted gap as slice 1 (no dispatcher exists yet).
 
+`firmware-reviewer`: VERDICT OK, no CRITICAL/MAJOR. Two MINOR, both fixed (a missing pointer comment in `lib/messages/src/messages.h` to the slice-1 "not yet enforced" caveat; noted but not required to fix, since it's a whole-file pre-existing pattern not introduced here: every `test_messages` round-trip test only proves self-consistency, not an actual fixed-byte wire format -- a consistent-but-wrong endianness bug in both encode and decode would still pass every test in the file. Worth a single golden-byte-vector test someday to close that for the whole suite at once; not done now, out of scope for this slice).
+
+One real forward-looking point for whenever #11's dispatcher gets written (not a defect now -- no dispatcher exists yet): `PreloadBody.threshold_mN` must be validated against whichever profile is active **at the moment `PRELOAD_START` is processed**, not whatever was active when `CMD_SELECT_PROFILE` was last sent -- the profile can change mid-session between the two commands. Flagging now so it isn't designed wrong later.
+
 ### `protocol.h` 0.3: core command bodies, slice 1 of 3
 Building the `software/` PC app (previous entry) forced the DRAFT `CMD_*` bodies to actually get defined. Full command set worked out with Mathew across several rounds; implemented in three slices to keep each `firmware-reviewer` pass focused on one reviewable diff rather than one giant one. This entry is slice 1.
 
