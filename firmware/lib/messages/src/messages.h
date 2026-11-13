@@ -46,4 +46,16 @@ Result decode_telemetry(const uint8_t* in, size_t in_len, proto::TelemetryBody* 
 Result encode_event(const proto::EventBody& body, uint8_t* out, size_t out_cap, size_t* out_len);
 Result decode_event(const uint8_t* in, size_t in_len, proto::EventBody* out);
 
+// ---- Command bodies (0.3, slice 1 of 3). HOME/TARE/START/PAUSE/RESUME/STOP/RESET have
+// empty bodies and need no encode/decode pair -- see protocol.h's command-body comment.
+Result encode_select_profile(const proto::SelectProfileBody& body, uint8_t* out, size_t out_cap,
+                              size_t* out_len);
+Result decode_select_profile(const uint8_t* in, size_t in_len, proto::SelectProfileBody* out);
+
+Result encode_jog(const proto::JogBody& body, uint8_t* out, size_t out_cap, size_t* out_len);
+Result decode_jog(const uint8_t* in, size_t in_len, proto::JogBody* out);
+
+Result encode_arm(const proto::ArmBody& body, uint8_t* out, size_t out_cap, size_t* out_len);
+Result decode_arm(const uint8_t* in, size_t in_len, proto::ArmBody* out);
+
 }  // namespace messages

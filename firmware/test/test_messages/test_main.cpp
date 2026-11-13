@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "messages.h"
+#include "safety_limits.h"
 
 void setUp() {}
 void tearDown() {}
@@ -182,6 +183,81 @@ static void test_encode_rejects_null_pointers() {
         static_cast<int>(messages::encode_event(in, nullptr, 16, &len)));
 }
 
+static void test_select_profile_round_trip() {
+    proto::SelectProfileBody in{static_cast<uint8_t>(limits::ProfileId::CELL_100KG), 1};
+    uint8_t buf[proto::SELECT_PROFILE_WIRE_LEN];
+    size_t len = 0;
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(Result::OK),
+        static_cast<int>(messages::encode_select_profile(in, buf, sizeof(buf), &len)));
+    TEST_ASSERT_EQUAL_UINT32(proto::SELECT_PROFILE_WIRE_LEN, len);
+
+    proto::SelectProfileBody out{};
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(Result::OK),
+        static_cast<int>(messages::decode_select_profile(buf, len, &out)));
+    TEST_ASSERT_EQUAL_UINT8(in.profile_id, out.profile_id);
+    TEST_ASSERT_EQUAL_UINT8(in.coupler_confirmed, out.coupler_confirmed);
+}
+
+static void test_jog_round_trip() {
+    proto::JogBody in{proto::JogDir::TOWARD_LIM_NEAR, 0};
+    uint8_t buf[proto::JOG_WIRE_LEN];
+    size_t len = 0;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::encode_jog(in, buf, sizeof(buf), &len)));
+    TEST_ASSERT_EQUAL_UINT32(proto::JOG_WIRE_LEN, len);
+
+    proto::JogBody out{};
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::decode_jog(buf, len, &out)));
+    TEST_ASSERT_TRUE(in.direction == out.direction);
+    TEST_ASSERT_EQUAL_UINT8(in.action, out.action);
+}
+
+static void test_jog_stop_round_trip() {
+    // STOP ignores direction at the firmware-behaviour level, but the byte still round-trips.
+    proto::JogBody in{proto::JogDir::TOWARD_LIM_FAR, 1};
+    uint8_t buf[proto::JOG_WIRE_LEN];
+    size_t len = 0;
+    messages::encode_jog(in, buf, sizeof(buf), &len);
+    proto::JogBody out{};
+    messages::decode_jog(buf, len, &out);
+    TEST_ASSERT_TRUE(proto::JogDir::TOWARD_LIM_FAR == out.direction);
+    TEST_ASSERT_EQUAL_UINT8(1, out.action);
+}
+
+static void test_arm_round_trip() {
+    proto::ArmBody in{50000, 200, 880000, 20000, 500, 0, 0};
+    uint8_t buf[proto::ARM_WIRE_LEN];
+    size_t len = 0;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::encode_arm(in, buf, sizeof(buf), &len)));
+    TEST_ASSERT_EQUAL_UINT32(proto::ARM_WIRE_LEN, len);
+
+    proto::ArmBody out{};
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::decode_arm(buf, len, &out)));
+    TEST_ASSERT_EQUAL_UINT32(in.l0_um, out.l0_um);
+    TEST_ASSERT_EQUAL_UINT16(in.speed_mm_per_min, out.speed_mm_per_min);
+    TEST_ASSERT_EQUAL_UINT32(in.force_limit_mN, out.force_limit_mN);
+    TEST_ASSERT_EQUAL_UINT32(in.max_travel_um, out.max_travel_um);
+    TEST_ASSERT_EQUAL_UINT16(in.strain_limit_permille, out.strain_limit_permille);
+    TEST_ASSERT_EQUAL_UINT8(in.cycle_mode, out.cycle_mode);
+    TEST_ASSERT_EQUAL_UINT8(in.reserved, out.reserved);
+}
+
+static void test_arm_decode_rejects_truncated_buffer() {
+    proto::ArmBody in{1, 2, 3, 4, 5, 0, 0};
+    uint8_t buf[proto::ARM_WIRE_LEN];
+    size_t len = 0;
+    messages::encode_arm(in, buf, sizeof(buf), &len);
+
+    proto::ArmBody out{};
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::TOO_SHORT),
+                           static_cast<int>(messages::decode_arm(buf, len - 1, &out)));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_hello_round_trip);
@@ -196,5 +272,10 @@ int main() {
     RUN_TEST(test_decode_rejects_oversized_buffer);
     RUN_TEST(test_decode_rejects_null_pointers);
     RUN_TEST(test_encode_rejects_null_pointers);
+    RUN_TEST(test_select_profile_round_trip);
+    RUN_TEST(test_jog_round_trip);
+    RUN_TEST(test_jog_stop_round_trip);
+    RUN_TEST(test_arm_round_trip);
+    RUN_TEST(test_arm_decode_rejects_truncated_buffer);
     return UNITY_END();
 }

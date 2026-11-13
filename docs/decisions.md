@@ -1,8 +1,31 @@
-# Firmware decisions log
+# Project decisions log
 
-Newest first. Each entry: date, decision, reason, status. Anything marked PROPOSED is not approved; ask Mathew before acting on it.
+Newest first. Each entry: date, decision, reason, status. Anything marked PROPOSED is not approved; ask Mathew before acting on it. Covers both `firmware/` and `software/` (renamed from "Firmware decisions log" 2026-11-13 once the PC app got its own directory below).
 
 ## 2026-11-13
+
+### `protocol.h` 0.3: core command bodies, slice 1 of 3
+Building the `software/` PC app (previous entry) forced the DRAFT `CMD_*` bodies to actually get defined. Full command set worked out with Mathew across several rounds; implemented in three slices to keep each `firmware-reviewer` pass focused on one reviewable diff rather than one giant one. This entry is slice 1.
+
+**Slice 1 (this entry, 0.3):** `SELECT_PROFILE`, `HOME`, `JOG`, `TARE`, `ARM` (RUN mode only), `START`, `PAUSE`, `RESUME`, `STOP`, `RESET`. Bodies and their NACK contracts are documented directly in `protocol.h` next to each struct. Two decisions worth calling out:
+- **`CMD_STOP` is a commanded fault, not a sensed one.** It applies `Event::SAFETY_TRIP` directly, bypassing `core_safety::evaluate()` entirely (that function only ever decides faults from sensor/rule input, never from a direct command) -- logged with a new `EventType::OPERATOR_STOP`, appended at the very end of the enum per the file's existing append-only convention. Needs `RESET` afterward like any other FAULT. Chosen over a graceful HOLD-like stop (which `PAUSE` already covers) because the skill already treats the PC's stop as equivalent to the physical STOP button, which is "acted on immediately" (section 10).
+- **`JogBody`'s direction field reuses `homing::Dir`'s naming, not a sign.** `TOWARD_LIM_FAR`/`TOWARD_LIM_NEAR`, not `+1`/`-1` -- deliberately, because `homing.h` already makes the point that it doesn't know which physical direction either value drives, and a `+1`/`-1` convention is exactly the kind of thing that gets dangerous if the PC and firmware ever disagree about which way is "positive". `protocol.h` gets its own copy of the enum rather than depending on `lib/homing`, to keep core/module isolation (skill 1.2) -- `protocol.h` has no business including a motion-sequencer header.
+
+**Still DRAFT, by design, not forgotten:** `CMD_PRELOAD` (slice 2) and `ARM`'s `CYCLE` mode + its extra config fields (slice 3, needs a new `lib/cycle_sequencer`). `ArmBody.cycle_mode` must be `0` until slice 3 lands; firmware NACKs `Err::OUT_OF_RANGE` on anything else.
+
+Also real, not yet fixed: `ArmBody.l0_um`'s "L0 within stroke" validation (skill rule 6) can't be enforced yet -- `cfg::JAW_GAP_AT_HOME_UM` is still `0`/unmeasured (#6). Noted directly in the struct's comment so it isn't silently assumed working.
+
+151 native tests (was 146; `lib/messages` gained 5), cppcheck clean, both Teensy builds succeed.
+
+### PC app gets its own top-level directory, `software/`, in the same repo
+**Approved.** Considered a separate repo; rejected because the wire protocol (`firmware/include/protocol.h`) is the one real coupling point between firmware and PC app, and keeping both in one commit history means a protocol change and its PC-side update land atomically instead of risking silent drift across repos. Mirrors `firmware/`'s own CI pattern: `software/` gets its own GitHub Actions workflow gated by its own path filter, not mixed into `firmware.yml`.
+
+First milestone (MVP), decided in order of what it must prove before anything else: connect over serial, complete the HELLO handshake, hold the connection open with PC-sent HEARTBEATs, home, run one controlled ramp test, log force/position to CSV. No camera/strain video and no SCPI in this milestone.
+- **Video strain (OpenCV) deferred.** Record raw video + SYNC LED timestamp correlation later if it turns out to be easy, but treat strain extraction as a separate pass done once force/position logging over the real protocol is proven working on the bench -- do not couple two unproven things (serial protocol, video sync) in the first milestone.
+- **GUI: desktop app (PyQt/PySide), built from the start,** not a CLI-first throwaway. Chosen over a CLI-then-GUI path and over a local web dashboard.
+- **Log format: CSV.** Simple, human-readable, no schema migrations for a one-person lab tool.
+
+Open and explicitly NOT yet decided, needed before the MVP's HOME/ARM/START commands can actually be built: `protocol.h` marks every `CMD_*` body and the test-config sections as DRAFT. Building the MVP is what will force these to get nailed down (and bump `PROTOCOL_VERSION`) -- not done in this entry.
 
 ### `lib/sim_continuity` added for #14; `conductor_events()` hook added to module_api.h
 First module to implement `mod::Module` (skill 1.2). It's a software-only stand-in for the future phase-2 `continuity` module: no hardware, just proves the conductor-event seam into `break_detect` works before any phase-2 hardware exists.

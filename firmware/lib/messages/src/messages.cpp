@@ -14,6 +14,10 @@ public:
     Writer(uint8_t* buf, size_t cap) : buf_(buf), cap_(cap) {}
 
     bool put_u8(uint8_t v) { return put_bytes(&v, 1); }
+    bool put_u16(uint16_t v) {
+        const uint8_t b[2] = {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8)};
+        return put_bytes(b, 2);
+    }
     bool put_u32(uint32_t v) {
         const uint8_t b[4] = {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8),
                                static_cast<uint8_t>(v >> 16), static_cast<uint8_t>(v >> 24)};
@@ -45,6 +49,12 @@ public:
     Reader(const uint8_t* buf, size_t len) : buf_(buf), len_(len) {}
 
     bool get_u8(uint8_t* v) { return get_bytes(v, 1); }
+    bool get_u16(uint16_t* v) {
+        uint8_t b[2];
+        if (!get_bytes(b, 2)) return false;
+        *v = static_cast<uint16_t>(b[0]) | static_cast<uint16_t>(static_cast<uint16_t>(b[1]) << 8);
+        return true;
+    }
     bool get_u32(uint32_t* v) {
         uint8_t b[4];
         if (!get_bytes(b, 4)) return false;
@@ -218,6 +228,69 @@ Result decode_event(const uint8_t* in, size_t in_len, proto::EventBody* out) {
                     r.get_i32(&out->position_steps) && r.get_i32(&out->force_mN);
     if (!ok) return Result::TOO_SHORT;
     out->type = static_cast<proto::EventType>(type);
+    return Result::OK;
+}
+
+Result encode_select_profile(const proto::SelectProfileBody& body, uint8_t* out, size_t out_cap,
+                              size_t* out_len) {
+    if (out == nullptr || out_len == nullptr) return Result::BAD_ARG;
+    Writer w(out, out_cap);
+    const bool ok = w.put_u8(body.profile_id) && w.put_u8(body.coupler_confirmed);
+    if (!ok) return Result::NO_SPACE;
+    *out_len = w.len();
+    return Result::OK;
+}
+
+Result decode_select_profile(const uint8_t* in, size_t in_len, proto::SelectProfileBody* out) {
+    if (in == nullptr || out == nullptr) return Result::BAD_ARG;
+    if (in_len != proto::SELECT_PROFILE_WIRE_LEN) return Result::TOO_SHORT;
+    Reader r(in, in_len);
+    const bool ok = r.get_u8(&out->profile_id) && r.get_u8(&out->coupler_confirmed);
+    if (!ok) return Result::TOO_SHORT;
+    return Result::OK;
+}
+
+Result encode_jog(const proto::JogBody& body, uint8_t* out, size_t out_cap, size_t* out_len) {
+    if (out == nullptr || out_len == nullptr) return Result::BAD_ARG;
+    Writer w(out, out_cap);
+    const bool ok = w.put_u8(static_cast<uint8_t>(body.direction)) && w.put_u8(body.action);
+    if (!ok) return Result::NO_SPACE;
+    *out_len = w.len();
+    return Result::OK;
+}
+
+Result decode_jog(const uint8_t* in, size_t in_len, proto::JogBody* out) {
+    if (in == nullptr || out == nullptr) return Result::BAD_ARG;
+    if (in_len != proto::JOG_WIRE_LEN) return Result::TOO_SHORT;
+    Reader r(in, in_len);
+    uint8_t dir;
+    const bool ok = r.get_u8(&dir) && r.get_u8(&out->action);
+    if (!ok) return Result::TOO_SHORT;
+    out->direction = static_cast<proto::JogDir>(dir);
+    return Result::OK;
+}
+
+Result encode_arm(const proto::ArmBody& body, uint8_t* out, size_t out_cap, size_t* out_len) {
+    if (out == nullptr || out_len == nullptr) return Result::BAD_ARG;
+    Writer w(out, out_cap);
+    const bool ok = w.put_u32(body.l0_um) && w.put_u16(body.speed_mm_per_min) &&
+                    w.put_u32(body.force_limit_mN) && w.put_u32(body.max_travel_um) &&
+                    w.put_u16(body.strain_limit_permille) && w.put_u8(body.cycle_mode) &&
+                    w.put_u8(body.reserved);
+    if (!ok) return Result::NO_SPACE;
+    *out_len = w.len();
+    return Result::OK;
+}
+
+Result decode_arm(const uint8_t* in, size_t in_len, proto::ArmBody* out) {
+    if (in == nullptr || out == nullptr) return Result::BAD_ARG;
+    if (in_len != proto::ARM_WIRE_LEN) return Result::TOO_SHORT;
+    Reader r(in, in_len);
+    const bool ok = r.get_u32(&out->l0_um) && r.get_u16(&out->speed_mm_per_min) &&
+                    r.get_u32(&out->force_limit_mN) && r.get_u32(&out->max_travel_um) &&
+                    r.get_u16(&out->strain_limit_permille) && r.get_u8(&out->cycle_mode) &&
+                    r.get_u8(&out->reserved);
+    if (!ok) return Result::TOO_SHORT;
     return Result::OK;
 }
 
