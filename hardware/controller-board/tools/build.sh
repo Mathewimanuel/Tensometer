@@ -3,7 +3,9 @@
 #   schematic -> netlist check -> placement -> route -> DRC -> JLCPCB outputs
 # Needs KiCad 7+ (kicad-cli + pcbnew Python), the stock KiCad libraries, and for routing a
 # clone of https://github.com/drandyhaas/KiCadRoutingTools with its Rust router built
-# (`python3 build_router.py`). Point KRT_DIR at it.
+# (`python3 build_router.py`). Point KRT_DIR at it. The committed board was routed with
+# KRT commit 6ae347ba (2026-11-16). route_board.py retries router settings until KiCad's
+# DRC finds the board fully connected.
 # Usage (from hardware/controller-board):  KRT_DIR=/path/to/KiCadRoutingTools bash tools/build.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,6 +22,6 @@ python3 tools/gen_pcb.py . "$NET" >/dev/null
 mv tensometer-controller.kicad_pcb build/placement.kicad_pcb
 (cd tools && python3 route_board.py ../build/placement.kicad_pcb project_template.kicad_pro \
     ../tensometer-controller.kicad_pcb "$KRT_DIR")
-python3 tools/drc.py tensometer-controller.kicad_pcb build/drc.rpt
+python3 tools/drc.py tensometer-controller.kicad_pcb build/drc.rpt --routed
 (cd tools && python3 gen_fab.py ../tensometer-controller.kicad_pcb ../jlcpcb)
 rm -f tensometer-controller.kicad_prl

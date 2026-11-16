@@ -1,8 +1,9 @@
-# Controller board (rev 0.2): routed, JLCPCB-ready
+# Controller board (rev 0.3): compact, routed, JLCPCB-ready
 
 Phase 1 controller PCB: Teensy 4.1 socket, TB6600 interface, HX711 cable, limits,
 e-stop sense, operator panel, OLED, video-sync LED, and a header for the phase 2
-continuity board. 125 x 88 mm, 2 layers, 1 oz, GND plane on the bottom.
+continuity board. **57.5 x 72 mm** (rev 0.2 was 125 x 88: 62% less board), 2 layers,
+1.6 mm, 1 oz, GND poured on both layers.
 
 Open `tensometer-controller.kicad_pro` in KiCad 10. The files are KiCad 7 format (the
 newest KiCad available in the build environment); KiCad 10 opens them and asks to save
@@ -11,21 +12,49 @@ in its own format.
 | Path | What |
 |---|---|
 | `tensometer-controller.kicad_sch` / `-schematic.pdf` | Schematic (one A2 sheet, a net label per pin) |
-| `tensometer-controller.kicad_pcb` | Routed board: 0.25 mm signals, 0.4-0.6 mm power, 0.6/0.3 mm vias, GND pours both sides |
+| `tensometer-controller.kicad_pcb` | Routed board (rules below) |
 | `jlcpcb/gerbers.zip` | Gerbers + Excellon drill for JLCPCB |
 | `jlcpcb/BOM.csv`, `jlcpcb/CPL.csv` | JLCPCB assembly BOM and pick-and-place (JLC column format) |
 | `renders/` | Routed copper, and the Gerbers rendered back from the zip (gerbv) |
 | `tensometer.kicad_sym`, `tensometer.pretty/` | Project library: Teensy 4.1 symbol and socket footprint |
 | `tools/` | `design.py` (parts, nets, LCSC numbers) and the scripts that rebuild everything: `KRT_DIR=... bash tools/build.sh` |
 
+## What changed in rev 0.3 (size)
+
+- Every small passive that could go there sits **between the Teensy's header rows**:
+  the button/limit RC filters and pull-ups, D4 and C3. They are 0805s under a socketed
+  module, so solder them (JLC does) before the Teensy goes in; their reference
+  designators are on the Fab layer, not the silkscreen.
+- Connectors moved to the edges: power and TB6600 on the left, HX711/limits along the
+  bottom, panel, OLED, sync LED and the phase 2 header on the right.
+- J10 (phase 2 header) is rotated 180 degrees to free routing room; its pinout is unchanged.
+
+## Layout rules
+
+| Item | Rule | Why |
+|---|---|---|
+| Signal tracks | 0.25 mm, 0.2 mm clearance | Inside JLC's standard tolerance with margin |
+| Power tracks | 0.5 mm: +24V, 24V_F, VIN_24, VIN_T, +5V, GND; 0.4 mm: +3.3VA; 0.25 mm: +3V3 | IPC-2221, 1 oz, 10 C rise: 0.5 mm ~1.5 A, 0.25 mm ~0.8 A. The 5 V rail is under 0.5 A; +3V3 only feeds pull-ups, the OLED and the panel LED |
+| Vias | 0.6 mm pad / 0.3 mm drill, tented | JLC standard, no surcharge |
+| Via-in-pad | None | Unfilled vias wick solder |
+| GND | Pour on both layers, 0.3 mm clearance, thermal reliefs (0.5 mm spokes), islands removed; ~115 stitching vias on a 5 mm grid plus a ring 1.6 mm in from the edge; a dedicated via at every two-pad SMD GND pad | One low-impedance ground; decoupling caps get the shortest return |
+| Edge | Copper 0.5 mm from the board edge | |
+| Fiducials | 3 (1 mm copper, 2 mm mask opening) | For the SMT line |
+
+Narrower than the table in a few places: tracks neck down to the pad width where they
+enter a pad (0.28-0.45 mm over a fraction of a mm), and about 14 mm of +5V runs at
+0.25 mm where it threads between pins (good for ~0.8 A, still above the rail's load).
+
 ## Checks done
 
-- Schematic: the netlist KiCad exports matches `design.py` exactly (49 nets, 65 parts).
+- Schematic: the netlist KiCad exports matches `design.py` exactly (49 nets, 68 parts).
 - PCB: every pad carries the schematic's net; footprints linked to symbols by UUID.
-- KiCad DRC on the routed board: **0 unconnected, 0 clearance / width / via / edge errors**. Left: 4 silkscreen text overlaps and 1 silk-near-edge (cosmetic), and library warnings that only appear because this machine has no global KiCad library table.
+- KiCad DRC on the routed board: **0 errors, 0 unconnected**. Left: library warnings that only appear because this machine has no global KiCad library table.
+- Separate GND check: every GND pad, track, via and pour fragment is one connected copper island (the router counts a pad inside the pour outline as connected; that is not trusted).
+- Mask Gerber has no openings at vias (tented).
 - Gerbers rendered back with gerbv: outline, copper, drills and silk as expected.
 - Every LCSC number checked against the JLC parts database (jlcparts snapshot; stock figures fetched between 2026-09-21 and 2026-10-28, so re-check stock when ordering).
-- Not done: ERC (no CLI ERC in KiCad 7), 3D/mechanical fit, an independent design review.
+- Not done: ERC (no CLI ERC in KiCad 7), 3D/mechanical fit (connector bodies near the edges, the OLED and IDC cable clearances), an independent design review.
 
 ## Parts changed for JLCPCB
 
@@ -88,6 +117,11 @@ connectors.
 ## How it was routed
 
 `tools/route_board.py` drives [KiCad Routing Tools](https://github.com/drandyhaas/KiCadRoutingTools)
-(MIT): a GND plane on B.Cu, then every net at 0.25 mm / 0.2 mm clearance with power nets
-0.4-0.6 mm and vias never below 0.6/0.3 mm. The router writes KiCad 9 syntax; the script
-converts it to the KiCad 7 format used here, adds the F.Cu GND pour and refills.
+(MIT, commit 6ae347ba): a GND plane on B.Cu, then every net at the widths above with
+B.Cu made costly so the plane stays whole. The router writes KiCad 9 syntax; the script
+converts it to KiCad 7, pours GND on F.Cu, fills, drops stitching vias where both pours
+are solid (and into any walled-in pour fragment), refills with island removal, prunes
+vias left in removed islands and refills again. On a board this dense the router's
+result swings with its settings, so the script retries a short list of them until
+KiCad's DRC reports zero unconnected items. `tools/build.sh` fails if the final DRC has
+any error.

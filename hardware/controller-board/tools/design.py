@@ -161,6 +161,10 @@ PARTS = [
     ("H2", "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", {}, "mech"),
     ("H3", "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", {}, "mech"),
     ("H4", "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", {}, "mech"),
+    # Global fiducials for JLC's SMT pick-and-place (fine-pitch TSSOP on board).
+    ("FID1", "Mechanical:Fiducial", "Fiducial", "Fiducial:Fiducial_1mm_Mask2mm", {}, "mech"),
+    ("FID2", "Mechanical:Fiducial", "Fiducial", "Fiducial:Fiducial_1mm_Mask2mm", {}, "mech"),
+    ("FID3", "Mechanical:Fiducial", "Fiducial", "Fiducial:Fiducial_1mm_Mask2mm", {}, "mech"),
 ]
 
 # JLCPCB / LCSC part numbers, checked against the JLC parts database (jlcparts snapshot,
@@ -225,7 +229,7 @@ GROUP_TITLES = {
     "oled": "OLED (I2C)",
     "sync": "Video sync LED driver",
     "expansion": "Phase 2 expansion header",
-    "mech": "Mounting",
+    "mech": "Mounting holes and fiducials",
 }
 
 

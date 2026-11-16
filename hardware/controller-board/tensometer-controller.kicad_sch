@@ -1852,6 +1852,20 @@
         (circle (center 0 0) (radius 1.27) (stroke (width 1.27) (type default)) (fill (type none)))
       )
     )
+    (symbol "Mechanical:Fiducial"
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "FID" (at 0 5.08 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "Fiducial" (at 0 3.175 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (property "Datasheet" "~" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (property "ki_keywords" "fiducial marker" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (property "ki_description" "Fiducial Marker" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (property "ki_fp_filters" "Fiducial*" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (symbol "Fiducial_0_1"
+        (circle (center 0 0) (radius 1.27) (stroke (width 0.508) (type default)) (fill (type background)))
+      )
+    )
     (symbol "power:PWR_FLAG"
       (power)
       (pin_numbers hide)
@@ -6818,10 +6832,10 @@
     (effects (font (size 1.27 1.27)) (justify right bottom))
     (uuid "bd375d42-2093-5334-9c76-4ae231a98d59")
   )
-  (text "Mounting"
+  (text "Mounting holes and fiducials"
     (at 215 320 0)
     (effects (font (size 2 2)) (justify left bottom))
-    (uuid "db7c97de-9084-5443-a2ea-50f105b78c69")
+    (uuid "38a12876-fc9f-5085-b351-4b09d1516034")
   )
   (symbol
     (lib_id "Mechanical:MountingHole")
@@ -6904,6 +6918,69 @@
     (instances
       (project "tensometer-controller"
         (path "/6a1f2c4e-0b7d-4e8a-9c31-5d2e7f40a001" (reference "H4") (unit 1))
+      )
+    )
+  )
+  (symbol
+    (lib_id "Mechanical:Fiducial")
+    (at 227.33 375.92 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "10a30f45-45ee-5227-be29-c3839e316d46")
+    (property "Reference" "FID1" (at 227.33 370.84 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "Fiducial" (at 227.33 372.75 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
+      (at 227.33 375.92 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "~" (at 227.33 375.92 0) (effects (font (size 1.27 1.27)) hide))
+    (instances
+      (project "tensometer-controller"
+        (path "/6a1f2c4e-0b7d-4e8a-9c31-5d2e7f40a001" (reference "FID1") (unit 1))
+      )
+    )
+  )
+  (symbol
+    (lib_id "Mechanical:Fiducial")
+    (at 273.05 375.92 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "6f6da23f-5238-5d91-85e8-c05e3d2edbc8")
+    (property "Reference" "FID2" (at 273.05 370.84 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "Fiducial" (at 273.05 372.75 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
+      (at 273.05 375.92 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "~" (at 273.05 375.92 0) (effects (font (size 1.27 1.27)) hide))
+    (instances
+      (project "tensometer-controller"
+        (path "/6a1f2c4e-0b7d-4e8a-9c31-5d2e7f40a001" (reference "FID2") (unit 1))
+      )
+    )
+  )
+  (symbol
+    (lib_id "Mechanical:Fiducial")
+    (at 318.77 375.92 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "f2a78e07-9d5f-5da8-8c53-e8efa2651e40")
+    (property "Reference" "FID3" (at 318.77 370.84 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "Fiducial" (at 318.77 372.75 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
+      (at 318.77 375.92 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "~" (at 318.77 375.92 0) (effects (font (size 1.27 1.27)) hide))
+    (instances
+      (project "tensometer-controller"
+        (path "/6a1f2c4e-0b7d-4e8a-9c31-5d2e7f40a001" (reference "FID3") (unit 1))
       )
     )
   )
