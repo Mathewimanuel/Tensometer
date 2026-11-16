@@ -12,6 +12,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import serial
 
@@ -24,7 +25,22 @@ from .wire import protocol as proto
 # due. Not a protocol value, just a responsiveness/CPU tradeoff.
 _POLL_INTERVAL_S = 0.02
 
-EventCallback = Callable[[sess.SessionEvent], None]
+
+@dataclass(frozen=True, slots=True)
+class TransportError:
+    """The background read/write loop hit a fatal I/O error (e.g. the device was
+    unplugged mid-session) and has stopped. Session's own HeartbeatLost doesn't cover
+    this case: HeartbeatLost is only noticed by Session.tick(), which is itself only
+    ever called from inside this same loop -- once the loop dies, nothing would ever
+    call tick() again, so HeartbeatLost would never fire either, leaving the app looking
+    silently "connected" forever. Caught by hand, not a test: a real port-open failure
+    during manual GUI testing (2026-11-16, docs/decisions.md) surfaced as an unhandled
+    traceback before this existed."""
+
+    message: str
+
+
+EventCallback = Callable[[sess.SessionEvent | TransportError], None]
 
 
 class Transport:
@@ -87,7 +103,14 @@ class Transport:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            data = self._serial.read(256)
+            try:
+                data = self._serial.read(256)
+            except (OSError, serial.SerialException) as exc:
+                # A read failure (device unplugged, etc.) is fatal -- the loop cannot
+                # usefully continue, so it reports the error and stops itself rather
+                # than spinning on the same exception forever.
+                self._on_event(TransportError(message=str(exc)))
+                return
             now = time.monotonic()
 
             for byte in data:
@@ -107,5 +130,9 @@ class Transport:
 
             for event in self._session.tick(now):
                 if isinstance(event, sess.SendHeartbeatPing):
-                    self._write(wire_frame.encode(int(proto.MsgId.HEARTBEAT), seq=0, body=b""))
+                    try:
+                        self._write(wire_frame.encode(int(proto.MsgId.HEARTBEAT), seq=0, body=b""))
+                    except (OSError, serial.SerialException) as exc:
+                        self._on_event(TransportError(message=str(exc)))
+                        return
                 self._on_event(event)

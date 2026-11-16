@@ -20,6 +20,7 @@ from PySide6 import QtCore, QtWidgets
 from .. import datalog
 from .. import session as sess
 from ..controller import ArmConfig, Controller
+from ..transport import TransportError
 from ..wire import protocol as proto
 from .control_panel import ControlPanel
 from .cycle_plot import CyclePlotWidget
@@ -138,8 +139,19 @@ class MainWindow(QtWidgets.QMainWindow):
             if not port:
                 QtWidgets.QMessageBox.warning(self, "No port", "Select a serial port first.")
                 return
-            self._controller = Controller(port, on_event=self._event_signal.emit)
-            self._controller.connect()
+            # Opening a bad/busy/disconnected port raises synchronously here, on the GUI
+            # thread -- caught live during manual testing (2026-11-16, docs/decisions.md):
+            # an unhandled SerialException crashed straight through this method before
+            # this try/except existed.
+            try:
+                controller = Controller(port, on_event=self._event_signal.emit)
+                controller.connect()
+            except Exception as exc:  # noqa: BLE001 -- surfaced to the user, not swallowed
+                QtWidgets.QMessageBox.critical(
+                    self, "Could not connect", f"Could not open {port!r}:\n{exc}"
+                )
+                return
+            self._controller = controller
             self.connect_button.setText("Disconnect")
         else:
             self._controller.disconnect()
@@ -240,7 +252,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_stack.setCurrentWidget(self.live_plot)
 
     # ---- event handling (GUI thread only -- see module docstring) -------------------
-    def _on_event(self, event: sess.SessionEvent) -> None:
+    def _on_event(self, event: sess.SessionEvent | TransportError) -> None:
         if isinstance(event, sess.Connected):
             hello = event.hello
             self.hello_label.setText(
@@ -263,8 +275,25 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_telemetry(event.body)
         elif isinstance(event, sess.EventReceived):
             self._on_test_event(event.body)
+        elif isinstance(event, TransportError):
+            self._on_transport_error(event)
 
         self._refresh_ui()
+
+    def _on_transport_error(self, event: TransportError) -> None:
+        """The background reader thread has already stopped itself (transport.py's own
+        TransportError docstring) -- this resets the UI the same way a manual Disconnect
+        would, since nothing will arrive on this connection again."""
+        QtWidgets.QMessageBox.critical(self, "Connection lost", event.message)
+        if self._controller is not None:
+            self._controller.disconnect()
+            self._controller = None
+        self._heartbeat_lost = False
+        self.hello_label.setText("Not connected")
+        self.connect_button.setText("Connect")
+        if self._logger is not None:
+            self._logger.close()
+            self._logger = None
 
     def _on_telemetry(self, body: proto.TelemetryBody) -> None:
         if body.cycle_index > 0 and self.plot_stack.currentWidget() is not self.cycle_plot:

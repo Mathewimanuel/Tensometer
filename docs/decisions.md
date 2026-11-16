@@ -4,6 +4,17 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: two real crashes caught manually running the GUI (not by a test)
+Mathew ran the actual GUI for the first time (`python -m tensometer.gui.app` -- `tensometer-gui` doesn't work from Git Bash, its install dir isn't on `PATH`) and clicked Connect with `COM7` selected, a port that failed to open. This crashed with an unhandled `SerialException` traceback -- a gap no unit test had caught, because every test so far either used `loop://` (which always opens successfully) or injected a `_FakeController` that bypasses real port-opening entirely.
+
+Two bugs, both fixed:
+1. **`main_window.py`'s `_on_connect_clicked` had no error handling at all** around `Controller(port, ...)`/`.connect()`, both of which can raise synchronously on the GUI thread (`serial.serial_for_url` opens the port immediately). Now wrapped in `try/except Exception`, showing `QMessageBox.critical` and leaving the UI in a clean, reusable "Connect" state instead of crashing.
+2. **A deeper version of the same gap, found while fixing the first one, not yet triggered but real**: `transport.py`'s background read/write loop (`_run`) had no error handling either. If the port fails *after* a successful connect (device unplugged mid-session), the thread would die silently -- and since `Session.tick()` (which drives `HeartbeatLost` detection) is only ever called from inside that same loop, nothing would ever notice or report the connection was gone; the app would look permanently "connected" with a frozen but plausible-looking state. Fixed by wrapping both the read and the heartbeat-ping write in `try/except (OSError, serial.SerialException)`, emitting a new `TransportError` event and stopping the thread cleanly instead of continuing to spin. `main_window.py`'s `_on_transport_error` resets the UI the same way a manual Disconnect does (closes the controller and any open logger, resets the banner/button), plus shows the error.
+
+4 new tests (`test_transport.py`'s `_FailingSerial` stand-in whose `read()` raises; `test_main_window.py`'s bad-port and `TransportError` cases, both monkeypatching `QMessageBox.critical` rather than letting a real modal block the test). 130 tests total, ruff clean. Verified the exact originally-reported failure (`COM7`) now shows the dialog and resets cleanly instead of crashing, by stubbing `QMessageBox.critical` in a throwaway script and re-running it -- not just inferred from the test suite.
+
+**Lesson, not just a bug fix**: every prior test either used `loop://` (always opens) or a fake controller (bypasses real I/O entirely) -- nothing exercised a real port-open failure, because nothing was testing against unhappy-path I/O, only unhappy-path protocol logic. Worth remembering when adding more `transport.py`-adjacent code: the protocol layer has had very thorough review; the raw I/O boundary had none until a human ran it once.
+
 ### `software/`: GUI completed -- control panel, dialogs, main window, Review tab; three more real bugs caught
 Finishes the "build it all" push (Mathew, same date). On top of the plot widgets (previous entry):
 

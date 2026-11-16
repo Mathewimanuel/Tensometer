@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from PySide6 import QtWidgets
 
-from tensometer import datalog
+from tensometer import datalog, transport
 from tensometer import session as sess
 from tensometer.controller import ArmConfig
 from tensometer.gui.dialogs import ArmConfigDialog, MetadataDialog
@@ -199,3 +199,47 @@ def test_arm_flow_closes_previous_logger_before_opening_a_new_one(qtbot, tmp_pat
     assert len(datalog.load_telemetry(tmp_path / "old_telemetry.csv")) == 0
     # A new logger was opened for the (blank, since dialogs weren't filled in) new test.
     assert (tmp_path / "test_metadata.json").exists()
+
+
+def test_connect_with_a_bad_port_shows_an_error_instead_of_crashing(qtbot, monkeypatch):
+    # Caught live (2026-11-16, docs/decisions.md): opening a bad/busy port raised an
+    # unhandled SerialException straight through this method before this existed.
+    shown = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "critical", lambda *args, **kwargs: shown.append(args)
+    )
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.port_combo.setCurrentText("bogus://this-does-not-exist")
+
+    window._on_connect_clicked()  # must not raise
+
+    assert len(shown) == 1
+    assert window._controller is None
+    assert window.connect_button.text() == "Connect"
+
+
+def test_transport_error_resets_ui_like_a_disconnect(qtbot, tmp_path, monkeypatch):
+    shown = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "critical", lambda *args, **kwargs: shown.append(args)
+    )
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._controller = _FakeController(connected=True, state=proto.CoreState.RUN)
+    meta = datalog.TestMetadata(
+        test_name="x", started_at_wall_clock="t", material="m", l0_mm=1.0,
+        cell_profile="p", arm_config={},
+    )
+    window._logger = datalog.TestLogger(tmp_path, "x", meta)
+
+    window._on_event(transport.TransportError(message="device disconnected"))
+
+    assert len(shown) == 1
+    assert window._controller is None
+    assert window._logger is None
+    assert window.connect_button.text() == "Connect"
+    assert window.hello_label.text() == "Not connected"
+    assert len(datalog.load_telemetry(tmp_path / "x_telemetry.csv")) == 0

@@ -64,3 +64,30 @@ def test_stop_closes_the_port_and_joins_the_thread():
     t.stop()
     assert t._serial.is_open is False
     assert t._thread.is_alive() is False
+
+
+class _FailingSerial:
+    """A minimal serial-like stand-in whose read() raises -- simulates a device being
+    unplugged mid-session, which caught a real gap: the background thread had no error
+    handling at all before this (docs/decisions.md 2026-11-16)."""
+
+    def read(self, _size: int) -> bytes:
+        raise OSError("device disconnected")
+
+    def write(self, _data: bytes) -> int:
+        return 0
+
+    def close(self) -> None:
+        pass
+
+
+def test_read_failure_emits_transport_error_and_stops_the_thread():
+    collector = EventCollector()
+    t = tp.Transport(_FailingSerial(), on_event=collector)
+    t.start()
+    got = collector.wait_for(lambda e: isinstance(e, tp.TransportError))
+    assert "disconnected" in got.message
+    # The thread must have stopped itself (no infinite exception loop), not still be
+    # spinning on the same read() error.
+    t._thread.join(timeout=1.0)
+    assert t._thread.is_alive() is False
