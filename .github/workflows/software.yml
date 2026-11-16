@@ -1,0 +1,25 @@
+name: software
+
+on:
+  push:
+    paths: ["software/**", ".github/workflows/software.yml"]
+  pull_request:
+    paths: ["software/**", ".github/workflows/software.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: software
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Tests (pytest)
+        run: pytest -v

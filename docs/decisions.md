@@ -4,6 +4,15 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/` scaffolded: wire protocol layer (`tensometer.wire`)
+First real code in `software/` -- everything before this entry was design only. Built the pure-logic layer first, same sequencing as firmware's own `lib/` (protocol plumbing before transport/GUI): `wire/crc16.py`, `cobs.py`, `frame.py` (direct ports of `firmware/lib/crc16`/`cobs`/`frame`, algorithm-identical, not reimplemented from the CRC/COBS specs independently -- so the two sides can't silently diverge on the algorithm itself), `wire/protocol.py` (hand-mirrors `protocol.h` 0.5: every enum, every message body, as of this entry) and `wire/messages.py` (encode/decode for every body). 39 pytest tests, `ruff check` clean.
+
+One real difference from the C++ side, not a bug: `messages.py` uses Python's `struct` module (one `pack`/`unpack` call per body, format string) instead of porting `lib/messages`' byte-cursor `Writer`/`Reader` classes -- `struct` already does exact-width little-endian packing natively, so the byte-cursor approach (needed in C++ to control struct padding) would be pure overhead in Python. Each format string is checked against its body's own `*_WIRE_LEN` constant by a module-level `assert`, so a mismatched format string fails at import time.
+
+**One real bug caught while porting, not before**: the first draft of `frame.Reader`'s overflow-recovery test assumed the reader resyncs the instant its internal buffer overflows. It doesn't -- `discarding_` stays true until the *next* delimiter is seen, so a reader that overflows mid-frame swallows everything up to and including that frame's own trailing `0x00`, not just the overflow point. Caught because the test failed; fixed by checking the actual `firmware/test/test_frame/test_main.cpp::test_reader_discards_overlong_then_recovers` (the authoritative reference) rather than guessing, and the Python test now matches its structure exactly (push a `0x00` to flush the discard state, then push the next real frame).
+
+Still not built: serial transport (`pyserial`), the command dispatcher, the PyQt/PySide GUI, CSV/metadata logging, plotting -- all designed in the entries below but none of it exists in code yet. `.github/workflows/software.yml` added, mirroring `firmware.yml`'s path-filtered-workflow pattern (the thing the very first `software/` decision, below, said it would get).
+
 ### `software/` PC app: robustness/sync gaps found in design review, two decided
 Caught asking "what have we missed" after the layout/plotting entries below were settled. Four found; two needed a real decision, two didn't.
 
