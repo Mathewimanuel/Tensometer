@@ -4,6 +4,23 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/` PC app: GUI layout (not yet implemented)
+**Approved as a design decision; not yet implemented** -- same status note as the two entries below it. Worked out with Mathew right after the plotting/logging design (next entry).
+
+**Top bar:** serial port selector + connect/disconnect, `HELLO`'s version/capability/cell-profile readout, a prominent color-coded state banner (green idle/safe, blue running, yellow HOLD, red FAULT/BREAK_HOLD) -- `mod::CoreState` drives most of the rest of the UI, so it gets the most visually prominent treatment, not just a text label.
+
+**Left panel -- controls**, buttons enabled/disabled per the state machine's actual guards (e.g. `ARM` only from IDLE with homed + profile selected + coupler confirmed; `START` only from READY; `RESET` only from FAULT/BREAK_HOLD), not always-on: `SELECT_PROFILE` + coupler-confirmed checkbox, `HOME`, `JOG` (press-and-hold +/-), `TARE`, `PRELOAD`, `ARM`, `START`, `PAUSE`/`RESUME`, `STOP`, `RESET`.
+
+**Specimen metadata and `ARM`'s test config are two separate dialogs, not one combined form.** Metadata (material, `L0`, dimensions, operator notes) describes the specimen; the `ARM` config form (speed, force/travel/strain limits, RUN vs CYCLE) configures how to run the test against it -- kept conceptually and procedurally separate, metadata entered first.
+
+**Live and Review are separate tabs, both usable at once**, not a mode switch -- rejected replacing the live view on `File > Open`, specifically so a saved test can be reviewed while still connected and running a different one live. Each tab owns its own plot-widget instance (the same rendering code from the plotting-design entry below, instantiated twice), not a single shared widget that gets repointed at different data sources.
+
+**Center (Live tab):** the live plot from the entry below, swapped automatically for the hysteresis-loop + peak-force-trend view when `cycle_index` is nonzero. **Right/bottom:** live numeric readouts (force, position, cycle progress) plus a scrolling `EVENT` log.
+
+**Review tab:** `File > Open Test...` loads a saved `telemetry.csv`/`events.csv`/`metadata.json` triple into this tab's own plot widgets, read-only, metadata shown alongside instead of live controls.
+
+Still open, not decided here: exact widget/dialog implementation details, whether Review can hold more than one loaded test at once for comparison (not asked for yet).
+
 ### `software/` PC app: plotting and logging design (not yet implemented)
 **Approved as a design decision; not yet implemented** -- same status as the `software/` directory decision itself (2026-11-13): recorded so the design survives to whenever `software/` actually gets built, since sessions don't remember each other and the repo is the only memory. Worked out with Mathew across several rounds, after the protocol slices (above/below) settled what data is actually available to plot.
 
