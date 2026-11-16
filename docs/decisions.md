@@ -4,6 +4,28 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/` PC app: plotting and logging design (not yet implemented)
+**Approved as a design decision; not yet implemented** -- same status as the `software/` directory decision itself (2026-11-13): recorded so the design survives to whenever `software/` actually gets built, since sessions don't remember each other and the repo is the only memory. Worked out with Mathew across several rounds, after the protocol slices (above/below) settled what data is actually available to plot.
+
+**Library:** `pyqtgraph`, not `matplotlib` -- `matplotlib`'s animation layer isn't built for live updates at the 80 Hz `TELEMETRY` rate; `pyqtgraph` is.
+
+**Primary live plot: force vs. position**, not force vs. time -- the actual stress-strain-shaped curve a tensile test exists to produce (true engineering stress/strain needs specimen cross-section, which is a metadata concern, not a live-plot one). Force vs. time available as a secondary view/toggle.
+- **Filtered force (`TelemetryBody.force_filtered_mN`) shown by default; raw (`force_raw_mN`) available as a toggle**, not shown together always -- cleaner default view, raw available when checking HX711 noise/sample quality.
+- **Event markers drawn on the curve** (`SUBSTRATE_BREAK`, `SLIP`, `CONDUCTOR_OPEN`, etc. from the `EVENT` stream) at their exact point, not kept in a separate log only -- so break detection's timing is visible against the data, not just listed.
+- **Cutoff/force-limit reference line(s)**: horizontal line(s) at the active profile's `cutoff_mN` and `ArmBody.force_limit_mN` (when set) drawn on the live plot -- the whole point of this tool is staying under a cutoff, so margin-to-cutoff should be visible, not just numeric.
+- **Render rate is capped, decoupled from the 80 Hz data rate**: the serial-read thread fills a buffer at full rate; a separate Qt timer redraws from that buffer at ~20-30 fps. Redrawing every sample would burn CPU for no visible benefit and risks UI stutter on a long test.
+
+**CYCLE-mode gets its own view**, not the same plot reused as-is: samples grouped by `TelemetryBody.cycle_index` (each increment = a new loop), with every loop overlaid on one force-vs-position axes, colored by cycle number (early cycles one color/shade, later cycles another) so loop drift or shrinkage over a fatigue run is visible at a glance. Alongside it, a **peak-force-per-cycle trend panel** (cycle number -> that cycle's peak force) -- comes almost free once loops are segmented by `cycle_index`, and is a classic early-warning signal for fatigue softening before failure.
+
+**Load-and-replot is in the MVP**, not deferred -- a file-open dialog re-populates the same plot widgets from saved files instead of the live serial stream, same rendering code either way. This forced the CSV schema to be settled now rather than later:
+- **Three files per test**, not one: `<name>_telemetry.csv` (one row per 80 Hz sample), `<name>_events.csv` (one row per event), `<name>_metadata.json` (test-level facts, see below). Telemetry stays purely tabular at a fixed rate -- far easier to reload/plot than a file mixing row types.
+- Telemetry columns: `timestamp_us`, `position_steps`, `position_mm` (converted via the firmware's steps-per-mm constant -- **this value has to be duplicated into the Python side**, since there's no shared build between C++ and Python; comment it clearly as mirroring `cfg::STEPS_PER_MM` in `firmware/include/config.h` so it doesn't silently drift if that constant ever changes), `force_raw_mN`, `force_filtered_mN` (both logged even though the plot defaults to filtered-only -- the CSV is the complete record, the plot toggle is just a display choice), `state`, `cycle_index`, plus the `TELEM_*` flags decoded into separate named boolean columns (`position_valid`, `homed`, `coupler_confirmed`) rather than a raw bitmask -- easier to read in a spreadsheet.
+- Events columns: `timestamp_us`, `type`, `aux`, `position_mm`, `force_mN`.
+- **A real gap caught, not yet in any schema above, now fixed by adding metadata**: a second real gap caught in the same pass -- this project exists to compare materials (knit fabric vs. ABS vs. neoprene), which needs specimen cross-section for true stress/strain, not just force/position. Not used by the plot yet, but unrecoverable later if not captured at test time.
+- `<name>_metadata.json` carries: specimen material, `L0` (gauge length), cell profile, the full `ArmBody` config used (speed, limits, cycle params if `CYCLE`), operator notes, specimen width/thickness (for future stress/strain conversion), and the PC's own wall-clock time at test start -- **`TelemetryBody.timestamp_us` is firmware-relative (microseconds since Teensy boot), not wall-clock**, so this is the only place a real-time mapping exists; needed eventually to correlate with video-based strain measurement (already planned, deferred).
+
+Still open, not decided here: GUI layout/wireframe, exact `pyqtgraph` widget structure, whether metadata capture is a pre-test form or editable after the fact. None of this is implemented -- `software/` does not exist in the repo yet.
+
 ### `protocol.h` 0.5 + `lib/cycle_sequencer`: `ARM`'s `CYCLE` mode, slice 3 of 3
 Closes the 3-slice plan (decisions.md 2026-11-13). Three pieces:
 
