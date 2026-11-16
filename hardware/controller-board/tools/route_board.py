@@ -77,7 +77,9 @@ def fill(out):
 # On a board this dense the router's result swings with these settings (a GND pad can
 # end up walled in), so main() tries them in turn and keeps the first board that KiCad's
 # own DRC finds fully connected.
-ATTEMPTS = [(c, o) for c in ("8.0", "5.0", "12.0", "3.0") for o in ("original", "inside_out", "mps")]
+ATTEMPTS = ([(c, o, []) for c in ("8.0", "5.0", "12.0", "3.0") for o in ("original", "inside_out", "mps")]
+            + [(c, o, ["--via-cost", v]) for v in ("40", "120") for c in ("8.0", "5.0")
+               for o in ("original", "inside_out", "mps")])
 STITCH_PITCH = 5.0      # mm, GND stitching grid (well under lambda/20 for anything on this board)
 STITCH_RING = 1.6       # mm in from the board edge for the perimeter row
 STITCH_VIA = (0.6, 0.3)  # mm, same as signal vias; tented like every via here
@@ -301,10 +303,11 @@ def drc(out, rpt):
 
 
 def main(placement, pro, out, krt):
-    for b_cost, ordering in ATTEMPTS:
-        work = route_once(placement, pro, out, krt, b_cost, ordering)
+    for b_cost, ordering, extra in ATTEMPTS:
+        work = route_once(placement, pro, out, krt, b_cost, ordering, extra)
         n = unconnected(out)
-        print(f"B.Cu cost {b_cost}, ordering {ordering}: {n} unconnected (logs in {work})")
+        print(f"B.Cu cost {b_cost}, ordering {ordering} {' '.join(extra)}: {n} unconnected (logs in {work})",
+              flush=True)
         if n == 0:
             os.remove(out + ".drc.rpt")
             print(f"routed board: {out}")
@@ -312,7 +315,7 @@ def main(placement, pro, out, krt):
     raise SystemExit("no router setting gave a fully connected board")
 
 
-def route_once(placement, pro, out, krt, b_cost, ordering):
+def route_once(placement, pro, out, krt, b_cost, ordering, extra=()):
     work = tempfile.mkdtemp(prefix="route_")
     src = os.path.join(work, "in.kicad_pcb")
     subprocess.run([sys.executable, __file__, "--strip", placement, src], check=True)
@@ -326,7 +329,7 @@ def route_once(placement, pro, out, krt, b_cost, ordering):
          "--plane-layers", "B.Cu", "--board-edge-clearance", "0.5"] + RULES, os.path.join(work, "planes.log"))
     run([py, os.path.join(krt, "py_router/route.py"), planes, routed, "--layers", "F.Cu", "B.Cu",
          "--escalation", "board", "--layer-costs", "1.0", b_cost, "--ordering", ordering, "--power-nets", *POWER.keys(),
-         "--power-nets-widths", *[str(w) for w in POWER.values()]] + RULES, os.path.join(work, "route.log"))
+         "--power-nets-widths", *[str(w) for w in POWER.values()]] + RULES + list(extra), os.path.join(work, "route.log"))
 
     # The router writes zones/segments/vias in KiCad 9+ syntax; KiCad 7 wants tstamp.
     lines = open(routed).read().split("\n")
