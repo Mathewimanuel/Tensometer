@@ -4,6 +4,15 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: `session.py` -- HELLO/seq/heartbeat state (pure logic)
+Built on top of the wire layer (previous entry): `tensometer.session.Session` tracks HELLO handshake state, correlates ACK/NACK/timeout against outgoing commands by `seq`, and implements the heartbeat-health design from the robustness entry below (`HeartbeatLost` distinct from disconnect). Pure logic, no serial I/O or Qt -- 18 new pytest tests feed it constructed `frame.Frame`s and a fake clock directly, no real port or Teensy needed (there's nothing to test against on the firmware side yet anyway: no dispatcher exists).
+
+Two real decisions made while building this, not previously written down:
+1. **One command in flight at a time, not pipelined.** `begin_command()` raises if a command is already pending a response. Matches how both the GUI (buttons gated by state, decisions.md GUI-layout entry) and the physical panel work: press one button, wait for the result, not several outstanding at once. This means the GUI must disable *every* action button while any command is pending, not just the one clicked -- worth remembering when the GUI is actually built.
+2. **Command timeout is an invented value (`COMMAND_TIMEOUT_S = 1.0`), not derived from anything in the protocol.** No round-trip time is specified anywhere in the skill or `protocol.h` -- generous given the firmware main loop's own <2 ms worst-case budget (skill 3.3), but genuinely just a reasonable default, same category as firmware's own `// TODO(verify)` constants. Revisit once real commands are actually round-tripped against hardware.
+
+Still not built: `transport.py` (the thin `pyserial` driver that actually feeds `Session` from a real port -- next step), the command dispatcher, the GUI.
+
 ### `software/` scaffolded: wire protocol layer (`tensometer.wire`)
 First real code in `software/` -- everything before this entry was design only. Built the pure-logic layer first, same sequencing as firmware's own `lib/` (protocol plumbing before transport/GUI): `wire/crc16.py`, `cobs.py`, `frame.py` (direct ports of `firmware/lib/crc16`/`cobs`/`frame`, algorithm-identical, not reimplemented from the CRC/COBS specs independently -- so the two sides can't silently diverge on the algorithm itself), `wire/protocol.py` (hand-mirrors `protocol.h` 0.5: every enum, every message body, as of this entry) and `wire/messages.py` (encode/decode for every body). 39 pytest tests, `ruff check` clean.
 
