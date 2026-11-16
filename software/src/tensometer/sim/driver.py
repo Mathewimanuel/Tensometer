@@ -71,9 +71,10 @@ class FakeFirmwareDriver:
                     continue
                 try:
                     f = wire_frame.decode(completed)
-                except wire_frame.FrameError:
+                    replies = self.firmware.on_frame(f, now)
+                except ValueError:  # FrameError / CobsError / DecodeError: drop the frame
                     continue
-                if not self._write_all(self.firmware.on_frame(f, now)):
+                if not self._write_all(replies):
                     return
 
             if not self._write_all(self.firmware.tick(now)):

@@ -117,6 +117,9 @@ class TestLogger:
         self._telemetry_path = directory / f"{test_name}_telemetry.csv"
         self._events_path = directory / f"{test_name}_events.csv"
         self._metadata_path = directory / f"{test_name}_metadata.json"
+        for path in (self._telemetry_path, self._events_path, self._metadata_path):
+            if path.exists():
+                raise FileExistsError(f"{path} exists; refusing to overwrite a previous test")
 
         self._metadata_path.write_text(json.dumps(dataclasses.asdict(metadata), indent=2))
 
@@ -137,6 +140,13 @@ class TestLogger:
     def close(self) -> None:
         self._telemetry_file.close()
         self._events_file.close()
+
+    def discard(self) -> None:
+        """Close and delete the files: for a test that never started (ARM refused), so
+        its name stays free and no empty logs are left behind."""
+        self.close()
+        for path in (self._telemetry_path, self._events_path, self._metadata_path):
+            path.unlink(missing_ok=True)
 
     def __enter__(self) -> Self:
         return self

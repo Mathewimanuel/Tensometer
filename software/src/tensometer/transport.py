@@ -119,13 +119,15 @@ class Transport:
                     continue
                 try:
                     f = wire_frame.decode(completed)
-                except wire_frame.FrameError:
-                    # A corrupted frame (bad CRC, truncated, etc.) is dropped silently,
-                    # same as firmware's own comms layer would NACK-or-ignore malformed
-                    # input rather than crash -- there is nothing meaningful to do with
-                    # an unreadable frame except wait for the next one.
+                    events = self._session.feed_frame(f, now)
+                except ValueError:
+                    # A corrupted or unreadable frame (bad CRC, truncated COBS, unknown
+                    # body/enum value -- FrameError, CobsError and DecodeError all subclass
+                    # ValueError) is dropped silently, same as firmware's own comms layer
+                    # would NACK-or-ignore malformed input rather than crash. Anything
+                    # escaping here would kill this thread with no TransportError.
                     continue
-                for event in self._session.feed_frame(f, now):
+                for event in events:
                     self._on_event(event)
 
             for event in self._session.tick(now):

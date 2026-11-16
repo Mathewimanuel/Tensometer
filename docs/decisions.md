@@ -4,6 +4,17 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: four audit fixes (reader thread, log overwrite, ARM-before-logger, wrong L0)
+From the 2026-11-16 repo audit (20 findings; the rest are still open, see that session's report). Fixed:
+1. **Reader thread died silently on bad input.** `transport.py` caught only `FrameError`; a truncated COBS block (`CobsError`) or an undecodable body / unknown enum value (`DecodeError`) escaped `_run()` and ended the thread with no `TransportError`, so telemetry, logging and heartbeat-lost all stopped with no warning. Now catches `ValueError` (the common base) around decode + `feed_frame`. Same fix in `sim/driver.py`.
+2. **Existing test logs were overwritten.** `TestLogger` opened with `"w"`; two blank-named tests (both default to `test`), or a re-arm after reconnect (run numbering restarts), silently wiped the earlier files. Now raises `FileExistsError` if any of the three files exists. New `discard()` closes and deletes the files of a test that never started.
+3. **ARM was sent before the logger existed.** A logger failure (bad name, now also an existing file) left the machine armed with nothing recording. `_arm_with_metadata` now opens the logger first, shows the error and returns without sending ARM; if ARM is then refused, the fresh logger is discarded so its name stays free.
+4. **Wrong L0 in metadata.** `l0_mm` came from the metadata dialog, but the Arm dialog lets the operator change it and the firmware uses that one. Now `config.l0_mm`.
+
+Also: `pytest-qt` was never installed in the local `.venv` (it is in `pyproject` dev deps and CI installs it), so the 59 GUI tests had never run locally; one new jog test asserted the wrong thing and was fixed in 6931577. 168 Python tests pass.
+
+Not fixed from the audit, PC side: log files not line-flushed, a truncated last row makes a test unloadable, live-plot growth over long runs, cycle-plot item growth, protocol version never checked at HELLO, HeartbeatLost never fires if no heartbeat ever arrives, session has no lock (timeout-vs-STOP race). Firmware side: homing travel unbounded, IntervalTimer `update()` start jump, planner dt not clamped, energy-to-break corrupted across non-extending stretches and untested, flash-block hook bypassable with quotes, five fault causes with no wire EventType, no way to unload a specimen after e-stop (JOG/HOME both refused). Items touching protocol or safety behaviour need Mathew.
+
 ### Dispatcher review round 6: any non-limit cause blocks relief; debounce in time
 The fifth `firmware-reviewer` pass confirmed scenarios A-D closed and found one MAJOR (repro G/H: an e-stop, or a CMD_STOP, that arrives BEFORE the limit trip still allowed relief once released, because the block was only set for causes arising during a relieving jog or overwriting in FAULT, not for the cause that first entered FAULT) plus minors. **DECIDED by Mathew (2026-11-16):**
 

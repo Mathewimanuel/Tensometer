@@ -270,18 +270,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         config: ArmConfig = arm_dialog.arm_config()
 
-        try:
-            self._controller.arm(config)
-        except Exception as exc:  # noqa: BLE001
-            self.statusBar().showMessage(f"ARM failed: {exc}", 5000)
-            return
-
         hello = self._controller.hello
         metadata = datalog.TestMetadata(
             test_name=test_name,
             started_at_wall_clock=datetime.datetime.now().isoformat(),
             material=metadata_fields["material"],
-            l0_mm=metadata_fields["l0_mm"],
+            l0_mm=config.l0_mm,  # the value the firmware actually uses, not the dialog default
             cell_profile=self.control_panel.profile_combo.currentText(),
             arm_config=config.__dict__,
             specimen_width_mm=metadata_fields["specimen_width_mm"],
@@ -294,7 +288,21 @@ class MainWindow(QtWidgets.QMainWindow):
             # Re-arming without disconnecting first would otherwise leak the previous
             # test's open file handles indefinitely (caught during review, 2026-11-16).
             self._logger.close()
-        self._logger = datalog.TestLogger(self.output_dir, test_name, metadata)
+            self._logger = None
+        # Open the log before sending ARM: a logger failure (bad name, existing files)
+        # must not leave the machine armed with nothing recording the test.
+        try:
+            self._logger = datalog.TestLogger(self.output_dir, test_name, metadata)
+        except OSError as exc:
+            self.statusBar().showMessage(f"Cannot open test log: {exc}", 8000)
+            return
+        try:
+            self._controller.arm(config)
+        except Exception as exc:  # noqa: BLE001
+            self._logger.discard()
+            self._logger = None
+            self.statusBar().showMessage(f"ARM failed: {exc}", 5000)
+            return
         self.live_plot.clear_data()
         self.cycle_plot.clear_data()
         self.event_log.clear()

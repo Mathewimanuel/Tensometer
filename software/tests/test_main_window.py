@@ -336,3 +336,24 @@ def test_close_with_an_active_jog_sends_jog_stop(qtbot):
     window.control_panel.jog_pos_button.pressed.emit()
     window.close()
     assert fake.jog_calls == ["start", "stop"]
+
+
+def test_arm_is_not_sent_when_the_log_cannot_be_opened(qtbot, tmp_path, monkeypatch):
+    # Audit 2026-11-16: ARM went out before TestLogger existed, so a logger failure left
+    # the machine armed with nothing recording. Existing files for the (blank -> "test")
+    # name now make TestLogger refuse, and ARM must not have been sent.
+    monkeypatch.setattr(MetadataDialog, "exec", lambda self: QtWidgets.QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(ArmConfigDialog, "exec", lambda self: QtWidgets.QDialog.DialogCode.Accepted)
+    (tmp_path / "test_metadata.json").write_text("{}")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.output_dir = tmp_path
+    window._controller = _FakeController(
+        hello=proto.HelloBody(0, 5, 1, proto.CAP_CORE, 0, 600_000_000)
+    )
+
+    window._on_arm_requested()
+
+    assert window._controller.armed_with == []
+    assert window._logger is None

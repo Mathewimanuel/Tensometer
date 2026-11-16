@@ -98,3 +98,20 @@ def test_files_are_readable_immediately_after_close(tmp_path):
     # Not using the context manager here -- confirms close() alone flushes properly.
     telemetry = datalog.load_telemetry(tmp_path / "fabric01_telemetry.csv")
     assert len(telemetry) == 1
+
+
+def test_logger_refuses_to_overwrite_an_existing_test(tmp_path):
+    with datalog.TestLogger(tmp_path, "fabric01", _metadata()) as logger:
+        logger.log_telemetry(_telemetry_body())
+    try:
+        datalog.TestLogger(tmp_path, "fabric01", _metadata())
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("second TestLogger with the same name must raise")
+    assert len(datalog.load_telemetry(tmp_path / "fabric01_telemetry.csv")) == 1  # intact
+
+
+def test_discard_removes_all_three_files(tmp_path):
+    datalog.TestLogger(tmp_path, "aborted", _metadata("aborted")).discard()
+    assert list(tmp_path.iterdir()) == []

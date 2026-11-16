@@ -91,3 +91,21 @@ def test_read_failure_emits_transport_error_and_stops_the_thread():
     # spinning on the same read() error.
     t._thread.join(timeout=1.0)
     assert t._thread.is_alive() is False
+
+
+def test_malformed_frame_does_not_kill_the_reader_thread():
+    # Audit 2026-11-16: only FrameError was caught, so a truncated COBS frame (CobsError)
+    # or an undecodable body (DecodeError) escaped and ended the thread silently.
+    fake_port = serial.serial_for_url("loop://", timeout=0.05)
+    collector = EventCollector()
+    t = tp.Transport(fake_port, on_event=collector)
+    t.start()
+    try:
+        fake_port.write(b"\x05\x01\x00")  # truncated COBS block, then delimiter
+        hello = proto.HelloBody(proto.VERSION_MAJOR, proto.VERSION_MINOR, 1, proto.CAP_CORE, 0, 1)
+        fake_port.write(wire_frame.encode(int(proto.MsgId.HELLO), seq=0, body=messages.encode_hello(hello)))
+
+        collector.wait_for(lambda e: isinstance(e, sess.Connected))
+        assert not any(isinstance(e, tp.TransportError) for e in collector.events)
+    finally:
+        t.stop()
