@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 import pcbnew
 
-from design import PARTS
+from design import LCSC, PARTS
 from gen_sch import PROJECT, uid
 
 FPLIB = "/usr/share/kicad/footprints"
@@ -68,7 +68,7 @@ PLACE = {
     # Teensy (USB at the top edge)
     "U2": (55, 12, 0),
     # driver interface, left-middle
-    "J2": (6.5, 28, 270), "U3": (31, 35, 0), "C4": (37.5, 27, 0),
+    "J2": (10.6, 28, 270), "U3": (31, 35, 0), "C4": (37.5, 27, 0),
     "R2": (44, 26, 90), "R3": (47.5, 26, 90), "R4": (44, 32.5, 90),
     # HX711, left-bottom
     "J3": (5.5, 66, 270), "U4": (17, 72, 0), "C5": (16, 77.5, 0), "C6": (21.5, 77.5, 0),
@@ -177,6 +177,8 @@ def main(out_dir, net_xml):
         fp.SetPath(pcbnew.KIID_PATH("/" + uid("sym", ref)))
         fp.SetProperty("Sheetname", "")
         fp.SetProperty("Sheetfile", SCH_FILE)
+        if ref in LCSC:
+            fp.SetProperty("LCSC", LCSC[ref])
         x, y, rot = PLACE[ref]
         fp.SetPosition(pt(x, y))
         fp.SetOrientationDegrees(rot)

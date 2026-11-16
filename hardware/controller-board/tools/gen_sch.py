@@ -11,7 +11,7 @@ import os
 import sys
 import uuid as _uuid
 
-from design import GROUP_TITLES, PARTS, POWER_NETS, PWR_FLAG_NETS, TEENSY_LEFT, TEENSY_RIGHT
+from design import GROUP_TITLES, LCSC, PARTS, POWER_NETS, PWR_FLAG_NETS, TEENSY_LEFT, TEENSY_RIGHT
 from sexp import Q, dump, find, first, parse
 
 SYMLIB = "/usr/share/kicad/symbols"
@@ -164,6 +164,8 @@ class Sheet:
                 node.append(["property", Q(key), Q(val), ["at", fx, fy, fa], e])
             else:
                 node.append(["property", Q(key), Q(val), ["at", x, y, 0], eff(force_hide)])
+        if ref in LCSC:
+            node.append(["property", Q("LCSC"), Q(LCSC[ref]), ["at", x, y, 0], eff(True)])
         for num in pins_of(sym):
             node.append(["pin", Q(num), ["uuid", Q(uid("pin", ref, num))]])
         node.append(["instances", ["project", Q(PROJECT),

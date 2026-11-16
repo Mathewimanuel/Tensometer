@@ -63,12 +63,12 @@ PARTS = [
     ("J1", "Connector_Generic:Conn_01x02", "24V_IN", FP_TB2, {"1": "+24V", "2": "GND"}, "power"),
     ("F1", "Device:Polyfuse", "0.5A", "Fuse:Fuse_1812_4532Metric", {"1": "+24V", "2": "24V_F"}, "power"),
     ("D1", "Device:D_Schottky", "SS34", "Diode_SMD:D_SMA", {"1": "VIN_24", "2": "24V_F"}, "power"),
-    ("D2", "Device:D_TVS", "SMBJ30CA", "Diode_SMD:D_SMB", {"1": "VIN_24", "2": "GND"}, "power"),
-    C("C1", "10u 50V", "VIN_24", "GND", "power", FP_C1210),
+    ("D2", "Device:D_Zener", "SMBJ28A", "Diode_SMD:D_SMB", {"1": "VIN_24", "2": "GND"}, "power"),  # unidirectional TVS
+    C("C1", "10u 50V", "VIN_24", "GND", "power", FP_C1206),
     ("U1", "Regulator_Switching:R-78E5.0-0.5", "R-78E5.0-1.0",
      "Converter_DCDC:Converter_DCDC_RECOM_R-78E-0.5_THT",
      {"1": "VIN_24", "2": "GND", "3": "+5V"}, "power"),
-    C("C2", "22u 10V", "+5V", "GND", "power", FP_C1206),
+    C("C2", "22u 25V", "+5V", "GND", "power"),
     R("R1", "2k2", "+5V", "PWR_LED_A", "power"),
     ("D3", "Device:LED", "GREEN", "LED_SMD:LED_0805_2012Metric", {"1": "GND", "2": "PWR_LED_A"}, "power"),
     ("D4", "Device:D_Schottky", "SS14", "Diode_SMD:D_SMA", {"1": "VIN_T", "2": "+5V"}, "power"),
@@ -78,7 +78,7 @@ PARTS = [
     ("U2", "tensometer:Teensy4.1", "Teensy 4.1", "tensometer:Teensy41_Socket", teensy_pins(), "mcu"),
 
     # ---------------- Driver interface: 74AHCT244 at 5 V, two gates per signal
-    ("U3", "74xx:74AHCT244", "74AHCT244", "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", {
+    ("U3", "74xx:74AHCT244", "74AHCT244", "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm", {
         "1": "GND", "19": "GND",                 # both output enables permanently active
         "2": "STEP", "4": "STEP", "18": "PUL_N", "16": "PUL_N",
         "6": "DIR", "8": "DIR", "14": "DIR_N", "12": "DIR_N",
@@ -89,7 +89,7 @@ PARTS = [
     R("R2", "10k", "+3V3", "STEP", "driver"),    # STEP idles HIGH = opto off
     R("R3", "10k", "+3V3", "DIR", "driver"),
     R("R4", "10k", "ENA", "GND", "driver"),      # ENA LOW = opto on = TB6600 DISABLED
-    ("J2", "Connector_Generic:Conn_01x06", "TB6600", FP_TB6, {
+    ("J2", "Connector_Generic:Conn_01x06", "TB6600", "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_6-G-5,08_1x06_P5.08mm_Horizontal", {
         "1": "+5V", "2": "PUL_N", "3": "+5V", "4": "DIR_N", "5": "+5V", "6": "ENA_N"}, "driver"),
 
     # ---------------- HX711 (module sits on the carriage; 4 wires through the drag chain)
@@ -117,7 +117,7 @@ PARTS = [
     ("J6", "Connector_Generic:Conn_01x02", "ESTOP_SENSE", FP_TB2, {"1": "24V_SW", "2": "GND"}, "estop"),
     R("R11", "10k", "24V_SW", "OPTO_A", "estop", FP_R1206),
     ("D5", "Diode:1N4148W", "1N4148W", "Diode_SMD:D_SOD-123", {"1": "OPTO_A", "2": "GND"}, "estop"),
-    ("U5", "Isolator:PC817", "PC817", "Package_DIP:DIP-4_W7.62mm",
+    ("U5", "Isolator:PC817", "LTV-817S", "Package_DIP:SMDIP-4_W9.53mm",
      {"1": "OPTO_A", "2": "GND", "3": "GND", "4": "ESTOP_SENSE"}, "estop"),
     R("R12", "10k", "+3V3", "ESTOP_SENSE", "estop"),
     C("C9", "100n", "ESTOP_SENSE", "GND", "estop"),
@@ -136,7 +136,7 @@ PARTS = [
     R("R19", "330", "FAULT_LED", "FAULT_LED_C", "panel"),   # ~4 mA, under the 10 mA pin limit
 
     # ---------------- OLED (SSD1306 I2C module)
-    ("J8", "Connector_Generic:Conn_01x04", "OLED", "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+    ("J8", "Connector_Generic:Conn_01x04", "OLED", "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical",
      {"1": "GND", "2": "+3V3", "3": "I2C_SCL", "4": "I2C_SDA"}, "oled"),
     R("R20", "4k7", "+3V3", "I2C_SCL", "oled"),
     R("R21", "4k7", "+3V3", "I2C_SDA", "oled"),
@@ -162,6 +162,50 @@ PARTS = [
     ("H3", "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", {}, "mech"),
     ("H4", "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", {}, "mech"),
 ]
+
+# JLCPCB / LCSC part numbers, checked against the JLC parts database (jlcparts snapshot,
+# stock figures fetched 2026-09-21..10-28). "basic" parts have no JLC extended-part fee.
+# THT parts can be assembled by JLC (THT service) or hand-soldered.
+LCSC = {
+    # resistors (all JLC basic)
+    "R1": "C17520", "R7": "C17520", "R9": "C17520",                       # 2k2
+    "R2": "C17414", "R3": "C17414", "R4": "C17414", "R12": "C17414",      # 10k
+    "R13": "C17414", "R14": "C17414", "R15": "C17414", "R16": "C17414", "R17": "C17414", "R18": "C17414",
+    "R5": "C17408", "R6": "C17408", "R22": "C17408", "R24": "C17408",     # 100R
+    "R8": "C17513", "R10": "C17513",                                      # 1k
+    "R11": "C17902",                                                      # 10k 1206
+    "R19": "C17630",                                                      # 330R
+    "R20": "C17673", "R21": "C17673",                                     # 4k7
+    "R23": "C149504",                                                     # 100k
+    # capacitors (all JLC basic)
+    "C1": "C13585",                                                       # 10u 50V 1206
+    "C2": "C45783",                                                       # 22u 25V 0805
+    "C3": "C15850", "C6": "C15850",                                       # 10u 25V 0805
+    "C5": "C28323",                                                       # 1u 50V 0805
+    "C4": "C49678", "C7": "C49678", "C8": "C49678", "C9": "C49678", "C10": "C49678", "C11": "C49678",
+    "C12": "C49678", "C13": "C49678", "C14": "C49678", "C15": "C49678",  # 100n 50V
+    # semiconductors
+    "D1": "C8678",      # SS34 (basic)
+    "D2": "C113997",    # SMBJ28A, MDD (extended)
+    "D3": "C2297",      # green 0805 LED (basic)
+    "D4": "C2480",      # SS14 (basic)
+    "D5": "C81598",     # 1N4148W (basic)
+    "F1": "C369168",    # JK-MSMD050-30, 0.5 A / 30 V PTC (extended)
+    "Q1": "C20917",     # AO3400A (basic)
+    "U1": "C22371890",  # R-78E5.0-1.0 (YLPTEC), 7-36 V in, 1 A, THT (extended)
+    "U3": "C135583",    # 74AHCT244PW,118 TSSOP-20, Nexperia (extended)
+    "U4": "C404027",    # TLV75533PDBVR (extended)
+    "U5": "C109227",    # LTV-817S-TA1-C (basic)
+    # connectors (THT, extended)
+    "J1": "C8465", "J6": "C8465",          # WJ500V-5.08-2P screw terminal
+    "J2": "C441208",                       # KF2EDGR-5.08-6P header (mating plug KF2EDGK-5.08-6P = C440884)
+    "J3": "C144395",                       # JST B4B-XH-A
+    "J4": "C158012", "J5": "C158012", "J9": "C158012",  # JST B2B-XH-A
+    "J7": "C5665",                         # 2x5 IDC box header
+    "J8": "C541851",                       # 1x4 female header (OLED module plugs in)
+    "J10": "C68234",                       # 2x8 male header
+    # not assembled by JLC: U2 = Teensy 4.1 (yours) in 2x C41376163 1x24 female headers; H1-H4 holes
+}
 
 # Nets drawn with power symbols (everything else gets a net label).
 POWER_NETS = {"+24V": "power:+24V", "+5V": "power:+5V", "+3V3": "power:+3V3",
