@@ -2,7 +2,10 @@
 // ACK/NACK, HEARTBEAT, TELEMETRY, EVENT) are defined below (0.2). CMD_* bodies, slice 1
 // of 3 (0.3, docs/decisions.md): SELECT_PROFILE, HOME, JOG, TARE, ARM (RUN mode only),
 // START, PAUSE, RESUME, STOP, RESET. Slice 2 (0.4): PRELOAD. Slice 3 (0.5): ARM's CYCLE
-// mode + its extra config fields, plus TelemetryBody.cycle_index. Any change here must be
+// mode + its extra config fields, plus TelemetryBody.cycle_index. 0.6 (no layout change,
+// contract only, Mathew 2026-11-16): JOG keep-alive deadman, relieving jog out of FAULT,
+// CMD_STOP stops even with a bad body. 0.7 (Mathew 2026-11-16): explicit JOG KEEPALIVE
+// action (2), EventType::JOG_DEADMAN. Any change here must be
 // mirrored on the Python side and bump PROTOCOL_VERSION (minor for additive, major for
 // breaking).
 //
@@ -21,7 +24,7 @@
 namespace proto {
 
 constexpr uint8_t VERSION_MAJOR = 0;
-constexpr uint8_t VERSION_MINOR = 5;
+constexpr uint8_t VERSION_MINOR = 7;
 
 // Frame payload (before COBS): msg_id u8 | seq u8 | body | crc16 u16 (little-endian).
 constexpr uint16_t MAX_BODY_LEN = 240;
@@ -124,6 +127,9 @@ enum class EventType : uint8_t {
     // value's numeric encoding shifts (same append-only convention as mod::CoreState and
     // mod::ConductorEvent).
     OPERATOR_STOP,
+    // Core, 0.7 (appended): the firmware stopped a jog itself because no JOG KEEPALIVE
+    // arrived within limits::JOG_KEEPALIVE_TIMEOUT_US (see JogBody below).
+    JOG_DEADMAN,
 };
 
 // ---- Message bodies (core, 0.2) -------------------------------------------------------
@@ -201,7 +207,8 @@ constexpr size_t EVENT_WIRE_LEN = 8 + 1 + 1 + 4 + 4;  // 18
 //
 // CMD_STOP always applies Event::SAFETY_TRIP directly (accepted from any state, logged
 // with EventType::OPERATOR_STOP) -- an operator abort, not a sensed core-safety fault,
-// so it needs RESET afterward like any other FAULT. CMD_HOME is NACKed (Err::OUT_OF_RANGE)
+// so it needs RESET afterward like any other FAULT. 0.6: any CRC-valid CMD_STOP stops
+// first; a non-empty body then NACKs Err::BAD_LENGTH, but the machine is already in FAULT. CMD_HOME is NACKed (Err::OUT_OF_RANGE)
 // if the firmware's own |force| < 2 N guard (skill 3.4) isn't met; it does not take a
 // body to express that -- the guard is evaluated against live force, not a PC-supplied
 // value. CMD_START/PAUSE/RESUME/RESET NACK with Err::BAD_STATE per lib/state_machine's
@@ -221,15 +228,51 @@ constexpr size_t SELECT_PROFILE_WIRE_LEN = 1 + 1;  // 2
 // depending on lib/homing, to keep core/module isolation (skill 1.2).
 enum class JogDir : uint8_t { TOWARD_LIM_FAR = 0, TOWARD_LIM_NEAR = 1 };
 
+// JogBody.action values. KEEPALIVE added 0.7.
+constexpr uint8_t JOG_ACTION_START = 0;
+constexpr uint8_t JOG_ACTION_STOP = 1;
+constexpr uint8_t JOG_ACTION_KEEPALIVE = 2;
+
 struct JogBody {
-    JogDir direction;  // ignored when action == 1 (STOP)
-    uint8_t action;     // 0 = START, 1 = STOP
+    JogDir direction;  // ignored when action == JOG_ACTION_STOP
+    uint8_t action;     // JOG_ACTION_*; anything else NACKs Err::OUT_OF_RANGE
 };
 constexpr size_t JOG_WIRE_LEN = 1 + 1;  // 2
 // JOG_START NACKs: Err::NOT_HOMED (state_machine's homed_and_valid guard fails),
 // Err::BAD_STATE (not IDLE/READY), Err::MOTION_INHIBITED (inhibit mask set -- JOG_START
 // is on #11's per-event inhibit-enforcement list). JOG_STOP NACKs Err::BAD_STATE if not
-// currently JOG. Jog speed itself is never sent by the PC: unloaded jog runs at the
+// currently JOG.
+//
+// The action and (for START/KEEPALIVE) direction fields are range-checked first: a bad
+// value NACKs Err::OUT_OF_RANGE before any state check.
+//
+// 0.6/0.7 (Mathew 2026-11-16):
+//   - KEEP-ALIVE DEADMAN (0.7 form). JOG START is sent only on a real button press; a START
+//     received while already in JOG NACKs Err::BAD_STATE. While the button is held the PC
+//     sends JOG KEEPALIVE (same direction) about every 100 ms. KEEPALIVE only refreshes the
+//     deadman: accepted only while in JOG, in the jog's own direction, with a valid force
+//     reading; Err::BAD_STATE in every other case. It never starts motion. If no KEEPALIVE
+//     arrives within limits::JOG_KEEPALIVE_TIMEOUT_US (~250 ms) the firmware stops the jog
+//     itself, as if JOG_STOP had been received, and sends EventType::JOG_DEADMAN. That
+//     EVENT is best-effort (dropped if the USB TX buffer is full), so the PC must not depend
+//     on receiving it: the heartbeat's state is the truth. The PC
+//     should still send JOG_STOP on release (faster), but must not rely on it arriving.
+//   - RELIEVING JOG (skill 4 rule 4). JOG START is also accepted from FAULT, but only when
+//     LIMIT_STOP is the only cause this FAULT has ever had, the boot self-test is clean,
+//     exactly one limit switch is tripped, the direction is away from it, the FAULT's
+//     relief travel is not already past its cap, and every other core-safety rule is
+//     clear; otherwise Err::BAD_STATE. Homed is not required. Relief is blocked until RESET
+//     reaches IDLE by: any cause other than LIMIT_STOP at any point in the FAULT (including
+//     a CMD_STOP that entered it), and any fault or CMD_STOP during a relieving jog. The
+//     tripped switch is ignored only until it has read clear continuously for
+//     limits::RELIEF_CLEAR_DEBOUNCE_US, and the jog FAULTs if it travels more than
+//     limits::RELIEF_MAX_TRAVEL_STEPS before that, counted cumulatively over every
+//     relieving jog in the same FAULT (never restarted by a new trip; only RESET ends it).
+//     JOG_STOP, or the deadman, returns to FAULT; RESET is still required.
+//   - Force fails closed: while the firmware has no valid force reading, every JOG START
+//     and KEEPALIVE (including relieving jogs) NACKs Err::BAD_STATE.
+//
+// Jog speed itself is never sent by the PC: unloaded jog runs at the
 // homing fast-approach speed, auto-capped to cfg::JOG_LOADED_MAX_MM_PER_MIN whenever
 // |force| exceeds limits::JOG_LOADED_THRESHOLD_PERMILLE of the active profile's cutoff,
 // re-evaluated every tick -- entirely firmware-internal (skill 3.4/decisions.md 2026-10-15).

@@ -171,6 +171,15 @@ bool StateMachine::apply(Event event, const Guards& guards) {
             return false;
 
         case CoreState::FAULT:
+            // Relieving jog (skill 4 rule 4): back off the tripped switch, then JOG_STOP
+            // returns here and RESET is still required. Homed is not required: a machine
+            // that tripped a switch before ever homing must still be recoverable.
+            if (event == Event::JOG_START) {
+                if (!guards.jog_relieving) return false;
+                return_state_ = CoreState::FAULT;
+                state_ = CoreState::JOG;
+                return true;
+            }
             if (event == Event::RESET) {
                 if (!guards.cause_cleared) return false;
                 state_ = CoreState::IDLE;

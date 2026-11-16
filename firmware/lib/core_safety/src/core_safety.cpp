@@ -12,13 +12,20 @@ FaultReason evaluate(const Inputs& in) {
     // narrowing the original "suspend both switches" decision after a real gap was found
     // -- see docs/decisions.md). Only LIM_FAR gets a homing carve-out, since that's the
     // only switch lib/homing actually watches itself.
-    if (in.lim_near_active) {
+    const bool relieving = (in.core_state == mod::CoreState::JOG);
+    const bool near_suppressed = relieving && in.relieving_switch == Switch::LIM_NEAR;
+    if (in.lim_near_active && !near_suppressed) {
         return FaultReason::LIMIT_SWITCH_OPEN;
     }
 
-    const bool far_rule_active = (in.core_state != mod::CoreState::HOMING);
+    const bool far_suppressed = relieving && in.relieving_switch == Switch::LIM_FAR;
+    const bool far_rule_active = (in.core_state != mod::CoreState::HOMING) && !far_suppressed;
     if (far_rule_active && in.lim_far_active) {
         return FaultReason::LIMIT_SWITCH_OPEN;
+    }
+
+    if (in.relief_overtravel) {
+        return FaultReason::RELIEF_OVERTRAVEL;
     }
 
     // GUARD_INTERLOCK_FITTED is applied here, not folded into a caller-supplied bool: it's
@@ -50,6 +57,28 @@ FaultReason evaluate(const Inputs& in) {
     }
 
     return FaultReason::NONE;
+}
+
+Switch ReliefMonitor::suppressed(bool lim_near_active, bool lim_far_active, uint64_t now_us) {
+    if (!active() || cleared_) return Switch::NONE;
+    const bool tripped = (switch_ == Switch::LIM_NEAR) ? lim_near_active : lim_far_active;
+    if (tripped) {
+        clearing_ = false;  // any tripped read restarts the debounce
+        return switch_;
+    }
+    if (!clearing_) {
+        clearing_ = true;
+        clear_since_us_ = now_us;
+    }
+    if (now_us - clear_since_us_ < debounce_us_) return switch_;  // not clear for long enough
+    cleared_ = true;  // re-armed from now on (2a)
+    return Switch::NONE;
+}
+
+bool ReliefMonitor::overtravel(int32_t position_steps) const {
+    if (!episode_ || cleared_) return false;
+    const int64_t d = static_cast<int64_t>(position_steps) - start_;
+    return static_cast<uint64_t>(d < 0 ? -d : d) > max_steps_;
 }
 
 }  // namespace core_safety

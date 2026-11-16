@@ -23,6 +23,8 @@
 //      after review: lib/homing's BACK_OFF phase drives toward LIM_NEAR using only a step
 //      count to detect overtravel, with no switch watching it at all). See
 //      docs/decisions.md 2026-10-27.
+//      Also suppressed: the single switch named by Inputs::relieving_switch, only while
+//      core_state == JOG (relieving jog out of FAULT, decided 2026-11-16).
 //   3. GUARD_SENSE open while a run-to-break test is armed (confirmed by Mathew,
 //      2026-10-27: armed here means "a test session is active, READY and beyond" -- NOT
 //      core_sm::StateMachine::arming()'s narrower ARM-to-L0_REACHED flag; the two are
@@ -81,7 +83,10 @@ enum class FaultReason : uint8_t {
     STRAIN_LIMIT,
     HEARTBEAT_LOST,
     MOTION_WHILE_INHIBITED,
+    RELIEF_OVERTRAVEL,  // appended 2026-11-16: relieving jog moved too far without clearing
 };
+
+enum class Switch : uint8_t { NONE, LIM_NEAR, LIM_FAR };
 
 struct Inputs {
     mod::CoreState core_state = mod::CoreState::BOOT;
@@ -96,6 +101,14 @@ struct Inputs {
     bool motion_active = false;
     bool lim_near_active = false;     // debounced NC limit switch reading (true = tripped)
     bool lim_far_active = false;
+    // Relieving jog out of FAULT (skill 4 rule 4, Mathew 2026-11-16): the one switch whose
+    // trip rule is suppressed while backing off it. Honoured only while core_state == JOG;
+    // the other switch and every other rule stay live. Caller sets it only for a jog that
+    // was entered from FAULT.
+    Switch relieving_switch = Switch::NONE;
+    // Relieving jog travelled past its cap without the switch ever clearing (decision 2b,
+    // ReliefMonitor::overtravel()). Checked right after the limit-switch rule.
+    bool relief_overtravel = false;
     bool estop_active = false;        // debounced ESTOP_SENSE reading (true = e-stop pressed)
     bool guard_sense_active = false;  // debounced GUARD_SENSE reading (true = guard open);
                                         // raw, NOT pre-ANDed with GUARD_INTERLOCK_FITTED
@@ -106,6 +119,60 @@ struct Inputs {
     bool strain_limit_exceeded = false;       // caller already did the strain-vs-bounds math
     bool heartbeat_stale = false;     // time since last PC heartbeat exceeds the timeout;
                                         // only trips while motion_active (see rule 6 above)
+};
+
+// Relieving-jog bookkeeping (Mathew 2026-11-16, decisions 2a/2b; one episode per limit
+// FAULT, rounds 4-5). Pure logic. The EPISODE begins with the first relieving jog after a
+// limit trip and lasts until reset_episode(), which only RESET reaching IDLE calls -- it is
+// never refreshed or restarted mid-FAULT. Each press is start() ... stop() inside it.
+//   2a: the tripped switch is suppressed only until it has read clear continuously for
+//       `debounce_us` (round 6; any tripped read restarts the timing, and so does every
+//       start(), so progress never carries over between presses); from then on it is
+//       re-armed for the rest of the episode, so any re-trip faults.
+//   2b: until it has cleared, being more than `max_steps` (either way) from the episode's
+//       FIRST jog start is RELIEF_OVERTRAVEL -- cumulative over presses, and judged for the
+//       whole episode (also between presses, so a press can be refused up front). Needs no
+//       home: it is relative.
+class ReliefMonitor {
+public:
+    // Begins a press. Only the first press of an episode sets the baseline and parameters;
+    // every press restarts the clear timing.
+    void start(Switch sw, int32_t start_position_steps, uint32_t max_steps,
+               uint64_t debounce_us) {
+        if (!episode_) {
+            switch_ = sw;
+            start_ = start_position_steps;
+            max_steps_ = max_steps;
+            debounce_us_ = debounce_us;
+            cleared_ = false;
+            episode_ = true;
+        }
+        clearing_ = false;
+        jogging_ = true;
+    }
+    void stop() { jogging_ = false; }  // press over; the episode is kept
+    void reset_episode() {
+        jogging_ = false;
+        episode_ = false;
+    }
+    bool active() const { return jogging_; }
+
+    // Call once per pass with the raw switch readings and the loop's 64-bit time; returns
+    // what to put in Inputs::relieving_switch (NONE once debounce-cleared, or when inactive).
+    Switch suppressed(bool lim_near_active, bool lim_far_active, uint64_t now_us);
+
+    bool overtravel(int32_t position_steps) const;
+
+private:
+    Switch switch_ = Switch::NONE;
+    int32_t start_ = 0;
+    uint32_t max_steps_ = 0;
+    uint64_t debounce_us_ = 0;
+    uint64_t clear_since_us_ = 0;
+    bool clearing_ = false;  // reading clear continuously since clear_since_us_
+    bool cleared_ = false;
+    bool episode_ = false;
+    bool jogging_ = false;
 };
 
 // Evaluates this tick against every rule listed above, in that order, returning the first

@@ -50,8 +50,9 @@ enum class Event : uint8_t {
     HOME,            // IDLE -> HOMING. Caller checks the |force| < 2 N guard (skill 3.4)
                       // before sending this -- the state machine knows nothing about force.
     HOMING_DONE,     // HOMING -> IDLE (fast approach, back-off, slow re-approach, zero set)
-    JOG_START,       // IDLE/READY -> JOG
-    JOG_STOP,        // JOG -> the state it was entered from
+    JOG_START,       // IDLE/READY -> JOG; also FAULT -> JOG if Guards::jog_relieving
+                      // (relieving jog, Mathew 2026-11-16; homed not required there)
+    JOG_STOP,        // JOG -> the state it was entered from (FAULT for a relieving jog)
     TARE_START,      // IDLE/READY -> TARE
     TARE_DONE,       // TARE -> the state it was entered from
     PRELOAD_START,   // IDLE/READY -> PRELOAD
@@ -84,6 +85,10 @@ struct Guards {
     bool cycle_mode = false;             // START: false -> RUN, true -> CYCLE
     bool module_inhibit_present = false; // blocks RESUME (skill 1.3: any inhibit bit set)
     bool cause_cleared = false;          // RESET: the FAULT cause is actually gone
+    // JOG_START from FAULT only (skill 4 rule 4, Mathew 2026-11-16): true iff the requested
+    // direction moves away from the tripped limit switch. Caller computes it; it does not
+    // relax the homed guard for a normal IDLE/READY jog.
+    bool jog_relieving = false;
 };
 
 class StateMachine {
@@ -94,6 +99,8 @@ public:
     // reports IDLE (no dedicated wire state for "arming"), but motion toward L0 should
     // already be underway.
     bool arming() const { return arming_; }
+    // Where JOG/TARE/PRELOAD/HOLD return to. FAULT while a relieving jog is active.
+    mod::CoreState return_state() const { return return_state_; }
 
     // Applies one event. Returns true if accepted (state may or may not have changed --
     // e.g. a lock request while already locked by that owner is accepted as a no-op);
@@ -107,7 +114,7 @@ private:
     proto::LockOwner lock_owner_ = proto::LockOwner::NONE;
     bool arming_ = false;
     // Where JOG/TARE/PRELOAD/HOLD return to on their "-> back" / RESUME transition.
-    // Only ever IDLE, READY, RUN or CYCLE -- the only states those can be entered from.
+    // Only ever IDLE, READY, RUN or CYCLE, or FAULT for a relieving jog.
     mod::CoreState return_state_ = mod::CoreState::IDLE;
 };
 

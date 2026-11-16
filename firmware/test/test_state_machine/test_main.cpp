@@ -380,8 +380,38 @@ static void test_reset_rejected_outside_fault() {
     TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);
 }
 
+// ---- Relieving jog from FAULT (skill 4 rule 4; Mathew 2026-11-16) -------------------
+
+static void test_fault_jog_accepted_only_in_relieving_direction_and_returns_to_fault() {
+    StateMachine sm = booted();
+    sm.apply(Event::SAFETY_TRIP, {});
+    Guards g{};  // not homed: relieving a tripped switch must not need a valid home
+    TEST_ASSERT_FALSE(sm.apply(Event::JOG_START, g));  // not relieving
+    TEST_ASSERT_TRUE(sm.state() == CoreState::FAULT);
+    g.jog_relieving = true;
+    TEST_ASSERT_TRUE(sm.apply(Event::JOG_START, g));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::JOG);
+    TEST_ASSERT_TRUE(sm.return_state() == CoreState::FAULT);
+    g.cause_cleared = true;
+    TEST_ASSERT_FALSE(sm.apply(Event::RESET, g));  // no RESET mid-jog
+    TEST_ASSERT_TRUE(sm.apply(Event::JOG_STOP, g));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::FAULT);
+    TEST_ASSERT_TRUE(sm.apply(Event::RESET, g));  // once the switch has cleared
+    TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);
+}
+
+static void test_relieving_guard_does_not_bypass_homed_for_normal_jog() {
+    StateMachine sm = booted();
+    Guards g{};
+    g.jog_relieving = true;
+    TEST_ASSERT_FALSE(sm.apply(Event::JOG_START, g));
+    TEST_ASSERT_TRUE(sm.state() == CoreState::IDLE);
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_fault_jog_accepted_only_in_relieving_direction_and_returns_to_fault);
+    RUN_TEST(test_relieving_guard_does_not_bypass_homed_for_normal_jog);
     RUN_TEST(test_boot_to_idle_on_self_test_pass);
     RUN_TEST(test_boot_rejects_everything_else);
     RUN_TEST(test_homing_round_trip);

@@ -52,11 +52,8 @@ Result decode_event(const uint8_t* in, size_t in_len, proto::EventBody* out);
 // The decode_* functions below only check wire shape (exact length, non-null), same as
 // every decode_* above them -- they do NOT enforce the NACK contracts documented next to
 // each body in protocol.h (e.g. Err::OUT_OF_RANGE for an invalid profile_id or a nonzero
-// ArmBody.cycle_mode, Err::NOT_HOMED for JOG). That enforcement belongs to whatever
-// command dispatcher eventually calls these (not written yet -- nothing in src/ref-
-// erences any CMD_* ID or these structs today, per the slice-1 firmware-reviewer pass,
-// 2026-11-13). Do not wire a dispatcher straight off these decode functions without
-// adding that validation layer first.
+// ArmBody.cycle_mode, Err::NOT_HOMED for JOG). That enforcement lives in lib/dispatcher
+// (2026-11-16, natively tested); call these through it, never straight from src/.
 Result encode_select_profile(const proto::SelectProfileBody& body, uint8_t* out, size_t out_cap,
                               size_t* out_len);
 Result decode_select_profile(const uint8_t* in, size_t in_len, proto::SelectProfileBody* out);
@@ -69,7 +66,7 @@ Result decode_arm(const uint8_t* in, size_t in_len, proto::ArmBody* out);
 
 // ---- Command bodies (0.4, slice 2 of 3). Same caveat as the slice-1 comment above:
 // decode_preload checks wire shape only, not PreloadBody's NACK contract (documented in
-// protocol.h next to the struct) -- not yet enforced anywhere, no dispatcher exists yet.
+// protocol.h next to the struct) -- enforced in lib/dispatcher.
 Result encode_preload(const proto::PreloadBody& body, uint8_t* out, size_t out_cap,
                        size_t* out_len);
 Result decode_preload(const uint8_t* in, size_t in_len, proto::PreloadBody* out);

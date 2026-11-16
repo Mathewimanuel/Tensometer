@@ -55,7 +55,10 @@ void clear_position_valid() { position_valid_ = false; }
 
 bool homing_in_progress() { return sequencing(); }
 
+void abort() { stop_and_abort(); }
+
 void start_homing(const homing::Params& params) {
+    position_valid_ = false;  // re-homing: the old zero is no longer trusted until DONE
     homing_seq.start(params);
     planner.reset();
     dir_tracker.reset();

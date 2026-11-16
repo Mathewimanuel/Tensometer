@@ -32,7 +32,25 @@ static_assert(profile_selectable(PROFILES[0]), "default profile must be selectab
 
 // ---- Timing limits (skill section 4) -----------------------------------------------
 constexpr uint32_t HEARTBEAT_TIMEOUT_US = 1000000;   // PC heartbeat loss while moving -> FAULT
-constexpr uint32_t HX711_STALE_US = 50000;           // force sample stale while moving or loaded
+// Jog deadman (Mathew 2026-11-16): a jog stops if no JOG KEEPALIVE (action 2, same
+// direction, protocol 0.7) arrives within this window; the PC sends one every ~100 ms
+// while the button is held.
+// TODO(verify): ~250 ms chosen for USB/PC jitter vs. overrun distance; tune on the bench.
+constexpr uint32_t JOG_KEEPALIVE_TIMEOUT_US = 250000;
+// Relieving jog out of a limit FAULT (decision 2b): FAULT if the tripped switch has not read
+// clear within this many steps of the FAULT episode's first relieving-jog start (cumulative
+// over presses, decided 2026-11-16 round 4). TODO(verify): awaiting Mathew's measurement of
+// the switch release travel. No value is invented here: 0 means the jog faults within one
+// loop pass of the first step unless the switch has already released, i.e. relieving jog
+// is effectively disabled until the measured number is entered.
+constexpr uint32_t RELIEF_MAX_TRAVEL_STEPS = 0;
+// Relieving jog (decision 2, rounds 5-6): the tripped switch must read clear continuously
+// for this long, timed with the main loop's 64-bit microsecond clock, before it counts as
+// cleared (cap lifted, switch re-armed); any tripped read restarts the timing.
+// TODO(verify): placeholder, not derived from any measurement -- Mathew will measure the
+// switch's bounce/chatter on the bench.
+constexpr uint32_t RELIEF_CLEAR_DEBOUNCE_US = 20000;
+constexpr uint32_t HX711_STALE_US = 50000;          // force sample stale while moving or loaded
 constexpr uint32_t LOOP_WORST_CASE_US = 2000;
 
 // ---- Homing and jog ----------------------------------------------------------------

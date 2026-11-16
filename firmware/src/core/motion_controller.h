@@ -39,6 +39,11 @@ void clear_position_valid();
 
 bool homing_in_progress();
 
+// Abandons any homing cycle in progress: stepper stopped, planner and direction tracker
+// reset, sequencer back to IDLE (only a fresh start_homing() can resume). For the main
+// loop's FAULT handling. position_valid() is not changed here.
+void abort();
+
 // Begins a homing cycle. `params` are caller-supplied (see the header note on OPEN
 // values). Safe to call again to restart, same as homing::Sequencer::start().
 void start_homing(const homing::Params& params);
