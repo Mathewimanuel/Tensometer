@@ -9,3 +9,4 @@ __pycache__/
 *.egg-info/
 *.egg-info
 software/tests_out/
+SESSION_HANDOFF.md
