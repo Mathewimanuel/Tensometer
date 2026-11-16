@@ -96,6 +96,69 @@ def test_jog_press_and_release_emit_start_and_stop_signals(qtbot):
         qtbot.mouseRelease(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
 
 
+def test_jog_held_resends_keepalive_until_released(qtbot):
+    # protocol 0.6 deadman: firmware stops the jog without a keep-alive every <250 ms.
+    panel = ControlPanel()
+    qtbot.addWidget(panel)
+    panel.update_state(proto.CoreState.IDLE, command_pending=False, connected=True)
+    qtbot.mousePress(panel.jog_neg_button, QtCore.Qt.MouseButton.LeftButton)
+    with qtbot.waitSignal(panel.jog_keepalive_requested, timeout=1000) as blocker:
+        pass
+    assert blocker.args == [proto.JogDir.TOWARD_LIM_NEAR]
+    qtbot.mouseRelease(panel.jog_neg_button, QtCore.Qt.MouseButton.LeftButton)
+    with qtbot.assertNotEmitted(panel.jog_keepalive_requested, wait=300):
+        pass
+
+
+def test_keepalive_stops_when_state_leaves_jog_while_still_held(qtbot):
+    panel = ControlPanel()
+    qtbot.addWidget(panel)
+    panel.update_state(proto.CoreState.IDLE, command_pending=False, connected=True)
+    qtbot.mousePress(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+    panel.update_state(proto.CoreState.JOG, command_pending=False, connected=True)
+    panel.update_state(proto.CoreState.FAULT, command_pending=False, connected=True)  # e.g. STOP
+    with qtbot.assertNotEmitted(panel.jog_keepalive_requested, wait=300):
+        pass
+    qtbot.mouseRelease(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+
+
+def test_keepalive_stops_on_disconnect_and_on_cancel(qtbot):
+    panel = ControlPanel()
+    qtbot.addWidget(panel)
+    panel.update_state(proto.CoreState.IDLE, command_pending=False, connected=True)
+    qtbot.mousePress(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+    panel.update_state(None, command_pending=False, connected=False)
+    with qtbot.assertNotEmitted(panel.jog_keepalive_requested, wait=300):
+        pass
+    qtbot.mouseRelease(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+
+    panel.update_state(proto.CoreState.IDLE, command_pending=False, connected=True)
+    qtbot.mousePress(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+    panel.cancel_jog_keepalive()  # MainWindow calls this when the JOG start is NACKed
+    with qtbot.assertNotEmitted(panel.jog_keepalive_requested, wait=300):
+        pass
+    qtbot.mouseRelease(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+
+
+def test_jog_buttons_stay_enabled_in_jog_and_fault(qtbot):
+    panel = ControlPanel()
+    qtbot.addWidget(panel)
+    for state in (proto.CoreState.JOG, proto.CoreState.FAULT):
+        panel.update_state(state, command_pending=False, connected=True)
+        assert panel.jog_pos_button.isEnabled() is True
+
+
+def test_held_jog_button_is_never_disabled_so_release_still_sends_stop(qtbot):
+    panel = ControlPanel()
+    qtbot.addWidget(panel)
+    panel.update_state(proto.CoreState.IDLE, command_pending=False, connected=True)
+    qtbot.mousePress(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+    panel.update_state(proto.CoreState.IDLE, command_pending=True, connected=True)
+    assert panel.jog_pos_button.isEnabled() is True
+    with qtbot.waitSignal(panel.jog_stop_requested, timeout=1000):
+        qtbot.mouseRelease(panel.jog_pos_button, QtCore.Qt.MouseButton.LeftButton)
+
+
 def test_preload_signal_emits_spin_box_values(qtbot):
     panel = ControlPanel()
     qtbot.addWidget(panel)

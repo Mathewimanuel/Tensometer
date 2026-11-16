@@ -93,7 +93,7 @@ class Controller:
         self._ensure_connected()
         return self._transport.send_command(int(msg_id), body)
 
-    # ---- actions (skill section 8 / protocol.h 0.5) ---------------------------------
+    # ---- actions (skill section 8 / protocol.h 0.7) ---------------------------------
     def select_profile(self, profile_id: proto.ProfileId, coupler_confirmed: bool) -> int:
         body = proto.SelectProfileBody(
             profile_id=int(profile_id), coupler_confirmed=int(coupler_confirmed)
@@ -104,14 +104,30 @@ class Controller:
         return self._send(proto.MsgId.CMD_HOME)
 
     def jog_start(self, direction: proto.JogDir) -> int:
-        body = proto.JogBody(direction=direction, action=0)
+        body = proto.JogBody(direction=direction, action=proto.JOG_ACTION_START)
         return self._send(proto.MsgId.CMD_JOG, messages.encode_jog(body))
 
+    def jog_keepalive(self, direction: proto.JogDir) -> int:
+        """JOG KEEPALIVE while the jog button is held (protocol 0.7 deadman: the firmware
+        stops the jog if none arrives within proto.JOG_KEEPALIVE_TIMEOUT_S). Only refreshes
+        an existing jog; it can never start one. Urgent path like stop(): it must never be
+        blocked by the previous keep-alive still awaiting its ACK."""
+        self._ensure_connected()
+        body = proto.JogBody(direction=direction, action=proto.JOG_ACTION_KEEPALIVE)
+        return self._transport.send_emergency_command(
+            int(proto.MsgId.CMD_JOG), messages.encode_jog(body)
+        )
+
     def jog_stop(self) -> int:
+        """Urgent path like stop(): a jog release must never wait behind a pending
+        command (e.g. an in-flight keep-alive)."""
         # direction is ignored by firmware when action == STOP (protocol.h's own
         # comment); TOWARD_LIM_FAR here is an arbitrary placeholder, not meaningful.
-        body = proto.JogBody(direction=proto.JogDir.TOWARD_LIM_FAR, action=1)
-        return self._send(proto.MsgId.CMD_JOG, messages.encode_jog(body))
+        self._ensure_connected()
+        body = proto.JogBody(direction=proto.JogDir.TOWARD_LIM_FAR, action=proto.JOG_ACTION_STOP)
+        return self._transport.send_emergency_command(
+            int(proto.MsgId.CMD_JOG), messages.encode_jog(body)
+        )
 
     def tare(self) -> int:
         return self._send(proto.MsgId.CMD_TARE)

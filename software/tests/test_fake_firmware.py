@@ -166,3 +166,40 @@ def test_unknown_message_nacks_instead_of_crashing():
 def test_heartbeat_ping_from_pc_gets_no_response():
     fw = FakeFirmware()
     assert fw.on_frame(_cmd_frame(proto.MsgId.HEARTBEAT, 0, b""), now=0.0) == []
+
+
+def _jog_body(direction: proto.JogDir, action: int) -> bytes:
+    return messages.encode_jog(proto.JogBody(direction=direction, action=action))
+
+
+def _nack_code(wires: list[bytes]) -> int:
+    return messages.decode_nack(_decode_all(wires)[0].body).error_code
+
+
+def test_jog_keepalive_same_direction_acks_and_reversal_nacks():
+    # protocol 0.7: only an explicit KEEPALIVE refreshes; a START while jogging is BAD_STATE.
+    fw = FakeFirmware()
+    fw.state = proto.CoreState.IDLE
+    fw.homed = True
+    far, near = proto.JogDir.TOWARD_LIM_FAR, proto.JogDir.TOWARD_LIM_NEAR
+    fw.on_frame(_cmd_frame(proto.MsgId.CMD_JOG, 1, _jog_body(far, proto.JOG_ACTION_START)), now=0.0)
+    assert fw.state == proto.CoreState.JOG
+
+    keep = fw.on_frame(_cmd_frame(proto.MsgId.CMD_JOG, 2, _jog_body(far, proto.JOG_ACTION_KEEPALIVE)), now=0.1)
+    assert _decode_all(keep)[0].msg_id == int(proto.MsgId.ACK)
+    rev = fw.on_frame(_cmd_frame(proto.MsgId.CMD_JOG, 3, _jog_body(near, proto.JOG_ACTION_KEEPALIVE)), now=0.2)
+    assert _nack_code(rev) == int(proto.Err.BAD_STATE)
+    again = fw.on_frame(_cmd_frame(proto.MsgId.CMD_JOG, 4, _jog_body(far, proto.JOG_ACTION_START)), now=0.3)
+    assert _nack_code(again) == int(proto.Err.BAD_STATE)
+    assert fw.state == proto.CoreState.JOG
+
+
+def test_jog_keepalive_never_starts_a_jog():
+    fw = FakeFirmware()
+    fw.state = proto.CoreState.IDLE
+    fw.homed = True
+    body = _jog_body(proto.JogDir.TOWARD_LIM_FAR, proto.JOG_ACTION_KEEPALIVE)
+    assert _nack_code(fw.on_frame(_cmd_frame(proto.MsgId.CMD_JOG, 1, body), now=0.0)) == int(
+        proto.Err.BAD_STATE
+    )
+    assert fw.state == proto.CoreState.IDLE

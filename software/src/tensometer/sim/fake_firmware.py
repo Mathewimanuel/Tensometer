@@ -176,7 +176,15 @@ class FakeFirmware:
 
     def _on_jog(self, seq: int, body: bytes) -> list[bytes]:
         parsed = messages.decode_jog(body)
-        if parsed.action == 0:  # START
+        if parsed.action == proto.JOG_ACTION_KEEPALIVE:
+            # 0.7: refresh only, same direction, only while jogging; never starts a jog.
+            # Scope cut: no deadman timer here (the real firmware stops the jog itself).
+            if self.state != proto.CoreState.JOG or parsed.direction != self._jog_direction:
+                return [self._nack(int(proto.MsgId.CMD_JOG), seq, proto.Err.BAD_STATE)]
+            return [self._ack(int(proto.MsgId.CMD_JOG), seq)]
+        if parsed.action == proto.JOG_ACTION_START:
+            if self.state == proto.CoreState.JOG:  # 0.7: no implicit keep-alive
+                return [self._nack(int(proto.MsgId.CMD_JOG), seq, proto.Err.BAD_STATE)]
             if self.state not in (proto.CoreState.IDLE, proto.CoreState.READY) or not self.homed:
                 return [self._nack(int(proto.MsgId.CMD_JOG), seq, proto.Err.NOT_HOMED)]
             self._return_state = self.state

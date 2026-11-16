@@ -1,5 +1,5 @@
 """Wire protocol shared with the firmware (firmware/include/protocol.h, skill section 8).
-Mirrors protocol.h 0.5 field-for-field. Hand-mirrored by design, not generated from a
+Mirrors protocol.h 0.7 field-for-field. Hand-mirrored by design, not generated from a
 shared schema (docs/decisions.md 2026-11-16) -- any change to protocol.h must be mirrored
 here by hand, and PROTOCOL_VERSION must match.
 
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 VERSION_MAJOR = 0
-VERSION_MINOR = 5
+VERSION_MINOR = 7
 
 # Mirrors protocol.h's own independent MAX_BODY_LEN (same value as frame.MAX_BODY_LEN,
 # but a separate constant there too -- protocol.h and frame.h each define their own copy
@@ -116,6 +116,8 @@ class EventType(IntEnum):
     BODE_RELEASE = 23
     # Core, 0.3: a PC-commanded CMD_STOP, applied as SAFETY_TRIP directly.
     OPERATOR_STOP = 24
+    # Core, 0.7 (appended): firmware stopped a jog itself, no KEEPALIVE within the deadman.
+    JOG_DEADMAN = 25
 
 
 class CoreState(IntEnum):
@@ -251,6 +253,17 @@ class JogBody:
 
 
 JOG_WIRE_LEN = 1 + 1  # 2
+
+# JogBody.action values (protocol.h JOG_ACTION_*). KEEPALIVE added 0.7.
+JOG_ACTION_START = 0
+JOG_ACTION_STOP = 1
+JOG_ACTION_KEEPALIVE = 2
+
+# 0.6/0.7 jog deadman (protocol.h's JOG comment): firmware stops a jog when no same-direction
+# JOG KEEPALIVE arrives within this window (limits::JOG_KEEPALIVE_TIMEOUT_US,
+# hand-mirrored, TODO(verify) on the firmware side). The PC re-sends well inside it.
+JOG_KEEPALIVE_TIMEOUT_S = 0.25
+JOG_KEEPALIVE_INTERVAL_S = 0.1
 
 
 @dataclass(frozen=True, slots=True)

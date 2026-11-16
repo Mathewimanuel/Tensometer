@@ -22,10 +22,19 @@ class _FakeController:
     command_pending: bool = False
     hello: proto.HelloBody | None = None
     armed_with: list[ArmConfig] = field(default_factory=list)
+    jog_calls: list[str] = field(default_factory=list)
 
     def arm(self, config: ArmConfig) -> int:
         self.armed_with.append(config)
         return 0
+
+    def jog_start(self, direction: proto.JogDir) -> int:
+        self.jog_calls.append("start")
+        return 7
+
+    def jog_stop(self) -> int:
+        self.jog_calls.append("stop")
+        return 8
 
     def disconnect(self) -> None:
         pass
@@ -301,3 +310,27 @@ def test_disconnect_forgets_last_specimen_so_rearm_is_unavailable(qtbot, tmp_pat
 
     assert window._last_metadata_fields is None
     assert window._base_test_name is None
+
+
+def test_nack_of_a_jog_command_cancels_the_keepalive_timer(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._controller = _FakeController(state=proto.CoreState.IDLE)
+    window._refresh_ui()
+    window.control_panel.jog_pos_button.pressed.emit()  # MainWindow sends START, seq 7
+    assert window.control_panel.jog_active()
+    window._on_event(
+        sess.CommandNacked(seq=7, msg_id=int(proto.MsgId.CMD_JOG), error=proto.Err.NOT_HOMED)
+    )
+    assert not window.control_panel.jog_active()
+
+
+def test_close_with_an_active_jog_sends_jog_stop(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    fake = _FakeController(state=proto.CoreState.IDLE)
+    window._controller = fake
+    window._refresh_ui()
+    window.control_panel.jog_pos_button.pressed.emit()
+    window.close()
+    assert fake.jog_calls == ["start", "stop"]

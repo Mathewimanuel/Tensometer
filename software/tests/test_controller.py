@@ -170,6 +170,26 @@ def test_stop_does_not_wait_behind_a_pending_command():
         c.disconnect()
 
 
+def test_jog_keepalive_and_stop_do_not_wait_behind_a_pending_jog_start():
+    # protocol 0.6 deadman: keep-alives must flow while the previous one is still pending,
+    # and a release must never be blocked behind one (it goes the same urgent path as STOP).
+    collector = EventCollector()
+    c, _fake_port = _connected_controller(collector)
+    try:
+        c.jog_start(proto.JogDir.TOWARD_LIM_FAR)  # left pending, never ACKed
+        seq = c.jog_keepalive(proto.JogDir.TOWARD_LIM_FAR)  # must not raise
+        got = collector.wait_for(lambda e: isinstance(e, sess.UnknownMessage) and e.seq == seq)
+        decoded = messages.decode_jog(got.body)
+        assert decoded.direction == proto.JogDir.TOWARD_LIM_FAR
+        assert decoded.action == proto.JOG_ACTION_KEEPALIVE  # 0.7: never a second START
+
+        seq2 = c.jog_stop()  # still pending keep-alive: must not raise either
+        got2 = collector.wait_for(lambda e: isinstance(e, sess.UnknownMessage) and e.seq == seq2)
+        assert messages.decode_jog(got2.body).action == 1
+    finally:
+        c.disconnect()
+
+
 def test_stop_still_requires_a_real_connection():
     c = ctrl.Controller("loop://")
     c.connect()

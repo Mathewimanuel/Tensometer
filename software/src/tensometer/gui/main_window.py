@@ -183,6 +183,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """Disconnects the serial port and closes any open test log cleanly on window
         close -- without this, closing the window mid-test would leave the background
         reader thread running and the log files never flushed/closed."""
+        # A held jog button never gets its release once the window is gone: stop the jog
+        # explicitly first (the firmware deadman would catch it anyway, ~250 ms later).
+        self.control_panel.stop_active_jog()
         if self._controller is not None:
             self._controller.disconnect()
         if self._logger is not None:
@@ -197,6 +200,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         cp.home_requested.connect(self._guarded(lambda: self._controller.home()))
         cp.jog_start_requested.connect(self._guarded(lambda d: self._controller.jog_start(d)))
+        cp.jog_keepalive_requested.connect(
+            self._guarded(lambda d: self._controller.jog_keepalive(d))
+        )
         cp.jog_stop_requested.connect(self._guarded(lambda: self._controller.jog_stop()))
         cp.tare_requested.connect(self._guarded(lambda: self._controller.tare()))
         cp.preload_requested.connect(self._guarded(lambda t, s: self._controller.preload(t, s)))
@@ -307,6 +313,12 @@ class MainWindow(QtWidgets.QMainWindow):
         elif isinstance(event, sess.HeartbeatLost):
             self._heartbeat_lost = True
         elif isinstance(event, sess.CommandNacked):
+            if event.msg_id == int(proto.MsgId.CMD_JOG):
+                # Any JOG NACK (the START, or a keep-alive) means this jog can't be kept
+                # alive: stop the timer. Not matched by seq on purpose -- an urgent
+                # keep-alive replaces the pending START, so a late START NACK never arrives
+                # here as such. A spurious cancel only lets the firmware deadman end the jog.
+                self.control_panel.cancel_jog_keepalive()
             self.statusBar().showMessage(
                 f"{proto.MsgId(event.msg_id).name} rejected: {event.error.name}", 5000
             )

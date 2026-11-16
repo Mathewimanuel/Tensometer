@@ -1,5 +1,5 @@
 """Encode/decode for the message bodies defined in protocol.py (mirrors protocol.h
-0.5 and firmware/lib/messages). Every function below packs/unpacks the exact
+0.7 and firmware/lib/messages). Every function below packs/unpacks the exact
 little-endian wire layout documented next to each struct in protocol.py.
 
 Unlike firmware/lib/messages' byte-cursor Writer/Reader (needed in C++ to avoid struct
