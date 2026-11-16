@@ -4,6 +4,14 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/` PC app: robustness/sync gaps found in design review, two decided
+Caught asking "what have we missed" after the layout/plotting entries below were settled. Four found; two needed a real decision, two didn't.
+
+1. **No plan for the firmware's SD backup log -- deferred, not forgotten.** Firmware already logs the same binary frames to its own SD card specifically so a test survives a USB disconnect (skill section 9) -- a real, already-decided firmware feature with nothing on the PC side able to read it back into the same `telemetry.csv`/`events.csv`/`metadata.json` schema. **Decided: defer.** Firmware's own SD logging isn't wired into `main.cpp` yet either (see the architecture-overview discussion, same date), so there's nothing to import from today. Add an Import-from-SD path once SD logging is actually live -- note kept here so it isn't lost.
+2. **Python protocol mirror stays hand-written, same as today.** `protocol.h`'s own top comment has said "any change here must be mirrored on the Python side" since before any of this slice work started, but how was never decided. **Decided: hand-mirrored**, not a shared-schema codegen step -- consistent with this project's one-person, low-tooling-overhead workflow; relies on this decisions log and `protocol.h`'s own comments for discipline rather than infrastructure. Revisit if protocol churn ever becomes a real source of bugs.
+3. **NACK/error surfacing**: every command the GUI sends tracks its own `seq`; an incoming `NACK` matched to a pending command's `seq` shows a clear message (e.g. "ARM rejected: coupler not confirmed" -- translating `Err` codes to plain text), not a silent no-op. Not a real fork, just a gap that needed an explicit answer rather than being implicitly "handle it somehow."
+4. **Heartbeat loss is distinct from a deliberate disconnect.** The PC tracks time since the last firmware `HEARTBEAT` was received; if it exceeds the same threshold firmware itself uses (`limits::HEARTBEAT_TIMEOUT_US`, 1 s), the UI shows a "connection lost" warning while leaving the serial port open -- different from the operator clicking Disconnect, which deliberately closes the port and resets the UI cleanly. Without this, a crashed/unplugged Teensy and a user-initiated disconnect would look identical.
+
 ### `software/` PC app: GUI layout (not yet implemented)
 **Approved as a design decision; not yet implemented** -- same status note as the two entries below it. Worked out with Mathew right after the plotting/logging design (next entry).
 
