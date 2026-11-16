@@ -36,6 +36,14 @@ software/
                     # app.py (`tensometer-gui` entry point). Headless-tested via
                     # QT_QPA_PLATFORM=offscreen (tests/conftest.py), same as everything
                     # else -- not left untested the way a GUI normally would be.
+    sim/           # FakeFirmware: a protocol-level stand-in for the real Teensy (NOT a
+                    # physics simulator -- see its own docstring), so the whole stack
+                    # above can be exercised end to end before any real command
+                    # dispatcher exists in firmware's main.cpp. driver.py drives it
+                    # against any duck-typed serial-like port; run_fake_firmware.py
+                    # (`tensometer-sim`) serves it over a plain TCP socket so the real
+                    # tensometer-gui/-cli can connect via pyserial's socket:// URL --
+                    # no virtual-COM-port driver needed on any platform.
   tests/
 ```
 
@@ -68,3 +76,15 @@ tensometer-gui
 Against real hardware, either will show `Connected` the moment the Teensy sends its
 `HELLO`, but nothing beyond that yet -- `main.cpp` has no command dispatcher, so any
 `CMD_*` sent from here won't get an ACK/NACK back until that's built.
+
+## Trying the GUI against the simulated firmware
+
+No real Teensy needed. In one terminal:
+
+```
+tensometer-sim                           # listens on 127.0.0.1:9000 by default
+```
+
+In another, launch the GUI (or CLI) and connect to `socket://127.0.0.1:9000` as the
+port -- a real test can be clicked all the way through: select a profile, home, arm,
+start, watch a (made-up, not physically realistic) ramp run to `BREAK_HOLD`.
