@@ -322,7 +322,9 @@ def test_nack_of_a_jog_command_cancels_the_keepalive_timer(qtbot):
     window._on_event(
         sess.CommandNacked(seq=7, msg_id=int(proto.MsgId.CMD_JOG), error=proto.Err.NOT_HOMED)
     )
-    assert not window.control_panel.jog_active()
+    # Keep-alives stop, but the press is still "active" so the release sends JOG_STOP.
+    assert not window.control_panel._jog_timer.isActive()
+    assert window.control_panel.jog_active()
 
 
 def test_close_with_an_active_jog_sends_jog_stop(qtbot):
