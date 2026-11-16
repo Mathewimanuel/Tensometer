@@ -18,6 +18,8 @@ FP_XH2 = "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
 FP_XH4 = "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical"
 FP_TB2 = "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"
 FP_TB6 = "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-6-5.08_1x06_P5.08mm_Horizontal"
+FP_RN = "Resistor_SMD:R_Array_Convex_4x0603"
+FP_TP = "TestPoint:TestPoint_Pad_D1.5mm"
 
 
 def R(ref, value, a, b, group, fp=FP_R):
@@ -26,6 +28,20 @@ def R(ref, value, a, b, group, fp=FP_R):
 
 def C(ref, value, a, b, group, fp=FP_C):
     return (ref, "Device:C", value, fp, {"1": a, "2": b}, group)
+
+
+def RN(ref, value, pairs, group):
+    """4-resistor array (0603x4, convex). pairs: up to 4 (a, b) net pairs; element n
+    sits between pins n and 9-n. Unused elements are left unconnected."""
+    pins = {}
+    for n in range(1, 5):
+        a, b = pairs[n - 1] if n <= len(pairs) else (None, None)
+        pins[str(n)], pins[str(9 - n)] = a, b
+    return (ref, "Device:R_Pack04", value, FP_RN, pins, group)
+
+
+def TP(ref, net):
+    return (ref, "Connector:TestPoint", net, FP_TP, {"1": net}, "test")
 
 
 # Teensy 4.1 physical pin order (datasheet pinout, USB end at the top).
@@ -61,12 +77,17 @@ def teensy_pins():
 PARTS = [
     # ---------------- Power: 24 V in -> fuse -> reverse protection -> 5 V buck -> Teensy
     ("J1", "Connector_Generic:Conn_01x02", "24V_IN", FP_TB2, {"1": "+24V", "2": "GND"}, "power"),
-    ("F1", "Device:Polyfuse", "0.5A", "Fuse:Fuse_1812_4532Metric", {"1": "+24V", "2": "24V_F"}, "power"),
+    ("F1", "Device:Polyfuse", "0.5A 60V", "Fuse:Fuse_1812_4532Metric", {"1": "+24V", "2": "24V_F"}, "power"),
     ("D1", "Device:D_Schottky", "SS34", "Diode_SMD:D_SMA", {"1": "VIN_24", "2": "24V_F"}, "power"),
     ("D2", "Device:D_Zener", "SMBJ28A", "Diode_SMD:D_SMB", {"1": "VIN_24", "2": "GND"}, "power"),  # unidirectional TVS
     C("C1", "10u 50V", "VIN_24", "GND", "power", FP_C1206),
-    ("U1", "Regulator_Switching:R-78E5.0-0.5", "R-78E5.0-1.0",
-     "Converter_DCDC:Converter_DCDC_RECOM_R-78E-0.5_THT",
+    # Bulk input cap: damps cable/contactor ringing that a ceramic alone would not.
+    ("C16", "Device:C_Polarized", "100u 50V", "Capacitor_SMD:CP_Elec_6.3x7.7",
+     {"1": "VIN_24", "2": "GND"}, "power"),
+    # 9-72 V input: the SMBJ28A clamps at up to ~45 V, so the converter must survive
+    # well above that (the R-78E it replaces was rated 36 V max).
+    ("U1", "Regulator_Switching:TSR_1-2450", "TSR 1-4850WI",
+     "Converter_DCDC:Converter_DCDC_TRACO_TSR-1_THT",
      {"1": "VIN_24", "2": "GND", "3": "+5V"}, "power"),
     C("C2", "22u 25V", "+5V", "GND", "power"),
     R("R1", "2k2", "+5V", "PWR_LED_A", "power"),
@@ -114,29 +135,42 @@ PARTS = [
 
     # ---------------- E-stop sense: 24 V after the contactor -> opto -> pin LOW
     # 24 V present = LOW (normal). E-stop pressed or wire broken = HIGH (estop_active).
-    ("J6", "Connector_Generic:Conn_01x02", "ESTOP_SENSE", FP_TB2, {"1": "24V_SW", "2": "GND"}, "estop"),
+    # The LED side has its own return (ESTOP_RTN, to the 24 V supply's 0 V through J6),
+    # not board GND: the opto actually isolates, and swapped J6 wires only reverse-bias
+    # the LED (D5 then conducts ~2.4 mA through R11) instead of putting 24 V on GND.
+    ("J6", "Connector_Generic:Conn_01x02", "ESTOP_SENSE", FP_TB2, {"1": "24V_SW", "2": "ESTOP_RTN"}, "estop"),
     R("R11", "10k", "24V_SW", "OPTO_A", "estop", FP_R1206),
-    ("D5", "Diode:1N4148W", "1N4148W", "Diode_SMD:D_SOD-123", {"1": "OPTO_A", "2": "GND"}, "estop"),
+    ("D5", "Diode:1N4148W", "1N4148W", "Diode_SMD:D_SOD-123", {"1": "OPTO_A", "2": "ESTOP_RTN"}, "estop"),
     ("U5", "Isolator:PC817", "LTV-817S", "Package_DIP:SMDIP-4_W9.53mm",
-     {"1": "OPTO_A", "2": "GND", "3": "GND", "4": "ESTOP_SENSE"}, "estop"),
+     {"1": "OPTO_A", "2": "ESTOP_RTN", "3": "GND", "4": "ESTOP_SENSE"}, "estop"),
     R("R12", "10k", "+3V3", "ESTOP_SENSE", "estop"),
     C("C9", "100n", "ESTOP_SENSE", "GND", "estop"),
 
     # ---------------- Operator panel (buttons to GND, ribbon cable)
+    # Buttons pull the cable line to GND. At the pin: 10k pull-up and 100n to GND; 1k in
+    # series from the cable (ESD / miswiring current limit, and with the 100n a ~0.1 ms
+    # RC). A pressed button reads 0.3 V. All of it sits next to J7.
     ("J7", "Connector_Generic:Conn_02x05_Odd_Even", "PANEL", "Connector_IDC:IDC-Header_2x05_P2.54mm_Vertical", {
-        "1": "BTN_START", "2": "BTN_STOP", "3": "BTN_JOG_POS", "4": "BTN_JOG_NEG",
-        "5": "BTN_HOME", "6": "BTN_TARE", "7": "FAULT_LED_C", "8": "+3V3", "9": "GND", "10": "GND"},
+        "1": "BTN_START_C", "2": "BTN_STOP_C", "3": "BTN_JOG_POS_C", "4": "BTN_JOG_NEG_C",
+        "5": "BTN_HOME_C", "6": "BTN_TARE_C", "7": "FAULT_LED_C", "8": "+3V3", "9": "GND", "10": "GND"},
      "panel"),
-    R("R13", "10k", "+3V3", "BTN_START", "panel"), C("C10", "100n", "BTN_START", "GND", "panel"),
-    R("R14", "10k", "+3V3", "BTN_STOP", "panel"), C("C11", "100n", "BTN_STOP", "GND", "panel"),
-    R("R15", "10k", "+3V3", "BTN_JOG_POS", "panel"), C("C12", "100n", "BTN_JOG_POS", "GND", "panel"),
-    R("R16", "10k", "+3V3", "BTN_JOG_NEG", "panel"), C("C13", "100n", "BTN_JOG_NEG", "GND", "panel"),
-    R("R17", "10k", "+3V3", "BTN_HOME", "panel"), C("C14", "100n", "BTN_HOME", "GND", "panel"),
-    R("R18", "10k", "+3V3", "BTN_TARE", "panel"), C("C15", "100n", "BTN_TARE", "GND", "panel"),
+    RN("RN1", "1k", [("BTN_START_C", "BTN_START"), ("BTN_STOP_C", "BTN_STOP"),
+                     ("BTN_JOG_POS_C", "BTN_JOG_POS"), ("BTN_JOG_NEG_C", "BTN_JOG_NEG")], "panel"),
+    RN("RN2", "1k", [("BTN_HOME_C", "BTN_HOME"), ("BTN_TARE_C", "BTN_TARE")], "panel"),
+    RN("RN3", "10k", [("+3V3", "BTN_START"), ("+3V3", "BTN_STOP"),
+                      ("+3V3", "BTN_JOG_POS"), ("+3V3", "BTN_JOG_NEG")], "panel"),
+    RN("RN4", "10k", [("+3V3", "BTN_HOME"), ("+3V3", "BTN_TARE")], "panel"),
+    C("C10", "100n", "BTN_START", "GND", "panel"),
+    C("C11", "100n", "BTN_STOP", "GND", "panel"),
+    C("C12", "100n", "BTN_JOG_POS", "GND", "panel"),
+    C("C13", "100n", "BTN_JOG_NEG", "GND", "panel"),
+    C("C14", "100n", "BTN_HOME", "GND", "panel"),
+    C("C15", "100n", "BTN_TARE", "GND", "panel"),
     R("R19", "330", "FAULT_LED", "FAULT_LED_C", "panel"),   # ~4 mA, under the 10 mA pin limit
 
-    # ---------------- OLED (SSD1306 I2C module)
-    ("J8", "Connector_Generic:Conn_01x04", "OLED", "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical",
+    # ---------------- OLED (SSD1306 I2C module, mounted on the operator panel, cabled)
+    # JST-PH (2.0 mm) so its cable cannot go into the HX711's JST-XH 4-way by mistake.
+    ("J8", "Connector_Generic:Conn_01x04", "OLED", "Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical",
      {"1": "GND", "2": "+3V3", "3": "I2C_SCL", "4": "I2C_SDA"}, "oled"),
     R("R20", "4k7", "+3V3", "I2C_SCL", "oled"),
     R("R21", "4k7", "+3V3", "I2C_SDA", "oled"),
@@ -150,11 +184,21 @@ PARTS = [
     ("J9", "Connector_Generic:Conn_01x02", "SYNC_LED", FP_XH2, {"1": "+5V", "2": "SYNC_LED_C"}, "sync"),
 
     # ---------------- Phase 2 expansion header (continuity / routing board)
-    ("J10", "Connector_Generic:Conn_02x08_Odd_Even", "EXPANSION", "Connector_PinHeader_2.54mm:PinHeader_2x08_P2.54mm_Vertical", {
-        "1": "ADC_A0", "2": "ADC_A1", "3": "ADC_A2", "4": "ADC_A3",
-        "5": "ADC_B0", "6": "ADC_B1", "7": "ADC_B2", "8": "ADC_B3",
-        "9": "V_EXC_SENSE", "10": "GND", "11": "I2C_SDA", "12": "I2C_SCL",
+    # Keyed box header (a reversed plug would put +5V on an ADC pin). 1k in series with
+    # every analog line: limits current into the Teensy's clamp if the phase 2 board ever
+    # drives above 3.3 V (~1.7 mA at 5 V) and is small next to the ADC's input.
+    ("J10", "Connector_Generic:Conn_02x08_Odd_Even", "EXPANSION", "Connector_IDC:IDC-Header_2x08_P2.54mm_Vertical", {
+        "1": "ADC_A0_C", "2": "ADC_A1_C", "3": "ADC_A2_C", "4": "ADC_A3_C",
+        "5": "ADC_B0_C", "6": "ADC_B1_C", "7": "ADC_B2_C", "8": "ADC_B3_C",
+        "9": "V_EXC_SENSE_C", "10": "GND", "11": "I2C_SDA", "12": "I2C_SCL",
         "13": "+3V3", "14": "+5V", "15": "GND", "16": "GND"}, "expansion"),
+    RN("RN5", "1k", [(f"ADC_A{i}_C", f"ADC_A{i}") for i in range(4)], "expansion"),
+    RN("RN6", "1k", [(f"ADC_B{i}_C", f"ADC_B{i}") for i in range(4)], "expansion"),
+    R("R25", "1k", "V_EXC_SENSE_C", "V_EXC_SENSE", "expansion"),
+
+    # ---------------- Test points (bare pads, not assembled): bring-up step 2 and rails
+    TP("TP1", "VIN_24"), TP("TP2", "+5V"), TP("TP3", "+3V3"), TP("TP4", "+3.3VA"),
+    TP("TP5", "ENA_N"), TP("TP6", "GND"), TP("TP7", "GND"),
 
     # ---------------- Mounting
     ("H1", "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", {}, "mech"),
@@ -174,7 +218,9 @@ LCSC = {
     # resistors (all JLC basic)
     "R1": "C17520", "R7": "C17520", "R9": "C17520",                       # 2k2
     "R2": "C17414", "R3": "C17414", "R4": "C17414", "R12": "C17414",      # 10k
-    "R13": "C17414", "R14": "C17414", "R15": "C17414", "R16": "C17414", "R17": "C17414", "R18": "C17414",
+    "R25": "C17513",                                                      # 1k
+    "RN1": "C20197", "RN2": "C20197", "RN5": "C20197", "RN6": "C20197",   # 1k x4 0603 array (basic)
+    "RN3": "C29718", "RN4": "C29718",                                     # 10k x4 0603 array (basic)
     "R5": "C17408", "R6": "C17408", "R22": "C17408", "R24": "C17408",     # 100R
     "R8": "C17513", "R10": "C17513",                                      # 1k
     "R11": "C17902",                                                      # 10k 1206
@@ -186,6 +232,7 @@ LCSC = {
     "C2": "C45783",                                                       # 22u 25V 0805
     "C3": "C15850", "C6": "C15850",                                       # 10u 25V 0805
     "C5": "C28323",                                                       # 1u 50V 0805
+    "C16": "C47023117",                                                   # 100u 50V electrolytic 6.3x7.7
     "C4": "C49678", "C7": "C49678", "C8": "C49678", "C9": "C49678", "C10": "C49678", "C11": "C49678",
     "C12": "C49678", "C13": "C49678", "C14": "C49678", "C15": "C49678",  # 100n 50V
     # semiconductors
@@ -194,9 +241,9 @@ LCSC = {
     "D3": "C2297",      # green 0805 LED (basic)
     "D4": "C2480",      # SS14 (basic)
     "D5": "C81598",     # 1N4148W (basic)
-    "F1": "C369168",    # JK-MSMD050-30, 0.5 A / 30 V PTC (extended)
+    "F1": "C19078719",  # 1812L050/60GR, 0.5 A / 60 V PTC (extended)
     "Q1": "C20917",     # AO3400A (basic)
-    "U1": "C22371890",  # R-78E5.0-1.0 (YLPTEC), 7-36 V in, 1 A, THT (extended)
+    "U1": "C6561272",   # TRACO TSR 1-4850WI, 9-72 V in, 5 V 1 A, THT (extended; low JLC stock, also at Farnell/Mouser/RS)
     "U3": "C135583",    # 74AHCT244PW,118 TSSOP-20, Nexperia (extended)
     "U4": "C404027",    # TLV75533PDBVR (extended)
     "U5": "C109227",    # LTV-817S-TA1-C (basic)
@@ -206,9 +253,48 @@ LCSC = {
     "J3": "C144395",                       # JST B4B-XH-A
     "J4": "C158012", "J5": "C158012", "J9": "C158012",  # JST B2B-XH-A
     "J7": "C5665",                         # 2x5 IDC box header
-    "J8": "C541851",                       # 1x4 female header (OLED module plugs in)
-    "J10": "C68234",                       # 2x8 male header
+    "J8": "C131334",                       # JST B4B-PH-K-S (OLED cable)
+    "J10": "C492443",                      # 2x8 IDC box header, keyed
     # not assembled by JLC: U2 = Teensy 4.1 (yours) in 2x C41376163 1x24 female headers; H1-H4 holes
+}
+
+# Manufacturer part numbers for the LCSC parts above (from the same JLC parts snapshot),
+# written into the schematic so the BOM is usable outside JLC too.
+MPN = {
+    "C2297": ("KT-0805G", "Hubei KENTO Elec"),
+    "C2480": ("SS14", "MDD Microdiode Semiconductor"),
+    "C5665": ("2.54-2*5P简牛", "BOOMELE Boom Precision Elec"),
+    "C8465": ("WJ500V-5.08-2P", "Ningbo Kangnex Elec"),
+    "C8678": ("SS34", "MDD Microdiode Semiconductor"),
+    "C13585": ("CL31A106KBHNNNE", "Samsung Electro Mechanics"),
+    "C15850": ("CL21A106KAYNNNE", "Samsung Electro Mechanics"),
+    "C17408": ("0805W8F1000T5E", "UNI ROYAL Uniroyal Elec"),
+    "C17414": ("0805W8F1002T5E", "UNI ROYAL Uniroyal Elec"),
+    "C17513": ("0805W8F1001T5E", "UNI ROYAL Uniroyal Elec"),
+    "C17520": ("0805W8F2201T5E", "UNI ROYAL Uniroyal Elec"),
+    "C17630": ("0805W8F3300T5E", "UNI ROYAL Uniroyal Elec"),
+    "C17673": ("0805W8F4701T5E", "UNI ROYAL Uniroyal Elec"),
+    "C17902": ("1206W4F1002T5E", "UNI ROYAL Uniroyal Elec"),
+    "C20197": ("4D03WGJ0102T5E", "UNI ROYAL Uniroyal Elec"),
+    "C20917": ("AO3400A", "Alpha Omega Semicon"),
+    "C28323": ("CL21B105KBFNNNE", "Samsung Electro Mechanics"),
+    "C29718": ("4D03WGJ0103T5E", "UNI ROYAL Uniroyal Elec"),
+    "C45783": ("CL21A226MAQNNNE", "Samsung Electro Mechanics"),
+    "C49678": ("CC0805KRX7R9BB104", "YAGEO"),
+    "C81598": ("1N4148W", "ST Semtech"),
+    "C109227": ("LTV-817S-TA1-C", "Lite On"),
+    "C113997": ("SMBJ28A", "MDD Microdiode Semiconductor"),
+    "C131334": ("B4B-PH-K-S(LF)(SN)", "JST"),
+    "C135583": ("74AHCT244PW,118", "Nexperia"),
+    "C144395": ("B4B-XH-A(LF)(SN)", "JST"),
+    "C149504": ("0805W8F1003T5E", "UNI ROYAL Uniroyal Elec"),
+    "C158012": ("B2B-XH-A(LF)(SN)", "JST"),
+    "C404027": ("TLV75533PDBVR", "Texas Instruments"),
+    "C441208": ("KF2EDGR-5.08-6P", "Cixi Kefa Elec"),
+    "C492443": ("BH254V-16P", "XFCN"),
+    "C6561272": ("TSR 1-4850WI", "TRACO POWER"),
+    "C19078719": ("1812L050/60GR", "LUTE"),
+    "C47023117": ("RVT50V100M6X8", "jieerrui"),
 }
 
 # Nets drawn with power symbols (everything else gets a net label).
@@ -224,11 +310,12 @@ GROUP_TITLES = {
     "driver": "TB6600 interface: 74AHCT244 at 5 V, reset-safe pulls (issue #18)",
     "hx711": "HX711: dedicated 3.3 V LDO, cable to the carriage",
     "limits": "Limit switches (NC, fail-safe)",
-    "estop": "E-stop sense: 24 V after the contactor",
-    "panel": "Operator panel (ribbon)",
+    "estop": "E-stop sense: 24 V after the contactor, isolated return",
+    "panel": "Operator panel (ribbon): 1k series, 10k pull-up, 100n at the pin",
     "oled": "OLED (I2C)",
     "sync": "Video sync LED driver",
-    "expansion": "Phase 2 expansion header",
+    "expansion": "Phase 2 expansion header (keyed), 1k on analog lines",
+    "test": "Test points (bare pads)",
     "mech": "Mounting holes and fiducials",
 }
 

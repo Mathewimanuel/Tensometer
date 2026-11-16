@@ -16,7 +16,7 @@ from design import LCSC, PARTS
 from gen_sch import PROJECT, uid
 
 FPLIB = "/usr/share/kicad/footprints"
-W, H = 57.5, 72.0           # board size, mm (rev 0.3 compact layout)
+W, H = 65.0, 72.0           # board size, mm (rev 0.4: room for keyed headers, SD access)
 OX, OY = 50.0, 50.0         # board origin on the page
 SCH_FILE = f"{PROJECT}.kicad_sch"
 
@@ -25,8 +25,79 @@ SCH_FILE = f"{PROJECT}.kicad_sch"
 # own via just past the pad's outer end (standard decoupling practice: shortest return
 # path, and the router cannot leave the pad walled in by signal tracks). Explicit taps
 # cover the rest. Offsets are from the pad centre, in board mm.
-GND_TAPS = {("J10", "10"): (-1.8, 0.0), ("J10", "15"): (0.0, -1.8), ("J10", "16"): (0.0, -1.8)}
+GND_TAPS = {("J10", "10"): (1.8, 0.0), ("J10", "15"): (0.0, 1.8), ("J10", "16"): (0.0, 1.8)}
 TAP_GAP = 0.75   # pad end to via centre: 0.3 via radius + 0.45 copper gap
+
+
+def _clear_of(board, x, y, r, skip_pad, vias):
+    """True if a via of radius r at (x, y) (internal units) clears every other pad by
+    0.25 mm (same-net SMD pads too, so no via lands in a pad), every hole and existing via
+    by 0.5 mm, and the board edge by 1.0 mm."""
+    gap, hole_gap = mm(0.25), mm(0.5)
+    if not (mm(OX + 1.0) + r < x < mm(OX + W - 1.0) - r and mm(OY + 1.0) + r < y < mm(OY + H - 1.0) - r):
+        return False
+    p = pcbnew.VECTOR2I(int(x), int(y))
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad is skip_pad:
+                continue
+            # every other pad is an obstacle, GND ones included: no via-in-pad
+            if pad.HitTest(p, r + (hole_gap if pad.HasHole() else gap)):
+                return False
+            if pad.HasHole() and pad.HitTest(p, r + hole_gap):
+                return False
+    for vx, vy in vias:
+        if (vx - x) ** 2 + (vy - y) ** 2 < (2 * r + hole_gap) ** 2:
+            return False
+    return True
+
+
+def add_gnd_taps(board, gnd):
+    """Dedicated GND via per two-pad SMD GND pad (see GND_TAPS above). Tries just past the
+    pad's outer end first, then to either side; a nearby tap via is shared instead."""
+    r = mm(0.3)
+    vias = []
+    jobs = [(board.FindFootprintByReference(ref).FindPadByNumber(n), [d]) for (ref, n), d in GND_TAPS.items()]
+    for fp in board.GetFootprints():
+        pads = list(fp.Pads())
+        if len(pads) != 2 or any(p.HasHole() for p in pads):
+            continue
+        for pad in pads:
+            if pad.GetNetname() != "GND":
+                continue
+            c, p = fp.GetPosition(), pad.GetPosition()
+            vx, vy = p.x - c.x, p.y - c.y
+            n = (vx * vx + vy * vy) ** 0.5
+            ux, uy = vx / n, vy / n
+            bb = pad.GetBoundingBox()
+            along = pcbnew.ToMM(abs(ux) * bb.GetWidth() / 2 + abs(uy) * bb.GetHeight() / 2) + TAP_GAP
+            across = pcbnew.ToMM(abs(uy) * bb.GetWidth() / 2 + abs(ux) * bb.GetHeight() / 2) + TAP_GAP
+            jobs.append((pad, [(ux * along, uy * along), (-uy * across, ux * across), (uy * across, -ux * across),
+                               (ux * along - uy * across, uy * along + ux * across),
+                               (ux * along + uy * across, uy * along - ux * across)]))
+    for pad, cands in jobs:
+        p0 = pad.GetPosition()
+        target = None
+        for vx, vy in vias:   # share a tap via that is already right next to this pad
+            if pad.HitTest(pcbnew.VECTOR2I(int(vx), int(vy)), mm(1.2)):
+                target = pcbnew.VECTOR2I(int(vx), int(vy))
+                break
+        if target is None:
+            for dx, dy in cands:
+                x, y = p0.x + mm(dx), p0.y + mm(dy)
+                if _clear_of(board, x, y, r, pad, vias):
+                    target = pcbnew.VECTOR2I(int(x), int(y))
+                    v = pcbnew.PCB_VIA(board)
+                    v.SetPosition(target); v.SetWidth(mm(0.6)); v.SetDrill(mm(0.3)); v.SetNet(gnd)
+                    board.Add(v)
+                    vias.append((x, y))
+                    break
+        if target is None:
+            print(f"no room for a GND tap at {pad.GetParentFootprint().GetReference()}.{pad.GetNumber()}")
+            continue
+        tr = pcbnew.PCB_TRACK(board)
+        tr.SetStart(p0); tr.SetEnd(target); tr.SetWidth(mm(0.4)); tr.SetLayer(pcbnew.F_Cu)
+        tr.SetNet(gnd); board.Add(tr)
 
 
 def mm(v):
@@ -69,62 +140,83 @@ def write_teensy_fp(pretty_dir):
 
 
 # ------------------------------------------------------------------ placement (mm, deg)
-# Rev 0.3 compact layout, 57.5 x 72 mm (was 125 x 88). Teensy vertical, USB at the top
-# edge. Screw/pluggable terminals on the left edge (wire entry outward), JST-XH along the
-# bottom, operator/expansion connectors on the right. Low SMD passives sit under the
-# socketed Teensy, close to the pins they serve.
+# Rev 0.4, 64 x 72 mm. Teensy vertical, USB at the top edge; the microSD end (bottom)
+# has nothing tall in front of it. Left edge: screw/pluggable terminals, wire entry
+# outward. Left interior: 24 V protection and the 5 V converter, then the TB6600 buffer,
+# HX711 LDO and e-stop opto. Right: keyed expansion and panel box headers, then a column
+# of cable connectors (OLED, sync LED, limits). Low SMD passives sit under the socketed
+# Teensy (8.5 mm sockets: ~11 mm clearance), close to the pins they serve.
 TX, TY = 29.0, 4.1          # Teensy pad 1
 PLACE = {
     # left edge: wire entry faces the board edge
     "J1": (5.15, 10.1, 270), "J2": (10.55, 22.4, 270), "J6": (5.15, 55.0, 270),
-    # power: 24 V -> F1 -> D1 -> U1 buck -> +5 V -> D4 -> Teensy VIN
-    "U1": (14.6, 7.0, 0), "F1": (14.1, 12.3, 0), "D1": (21.0, 12.3, 0),
-    "D2": (17.6, 17.0, 0), "C1": (23.6, 17.2, 90), "C2": (25.2, 3.5, 90),
-    "R1": (17.0, 47.0, 0), "D3": (21.5, 47.0, 0),          # power LED, visible beside the Teensy
-    # Teensy
-    "U2": (TX, TY, 0),
-    # TB6600 buffer + reset-safe pulls
-    "U3": (19.5, 25.0, 0), "C4": (25.0, 25.5, 90),
-    "R2": (17.0, 31.0, 0), "R3": (21.0, 31.0, 0), "R4": (25.0, 31.0, 0),
+    # power: 24 V -> F1 -> D1 -> VIN_24 (D2 TVS, C16 bulk, C1) -> U1 -> +5 V -> D4 -> VIN
+    "U1": (14.6, 7.0, 0), "C1": (15.9, 11.2, 0), "C2": (20.4, 11.2, 180),
+    "F1": (14.6, 15.2, 0), "D1": (21.6, 15.2, 180), "D2": (16.0, 21.0, 90),
+    "C16": (22.6, 22.6, 90),
+    # TB6600 buffer (C4 at VCC, pin 20) + reset-safe pulls
+    "U3": (17.5, 31.5, 0), "C4": (22.6, 29.6, 270),
+    "R2": (15.5, 37.6, 0), "R3": (19.0, 37.6, 0), "R4": (22.5, 37.6, 0),
     # HX711 supply
-    "U4": (17.0, 38.0, 0), "C5": (21.8, 37.5, 90), "C6": (25.2, 37.5, 90),
+    "U4": (16.5, 42.6, 0), "C5": (21.2, 42.4, 90), "C6": (24.4, 42.4, 90),
+    # power LED, visible beside the Teensy
+    "R1": (16.5, 48.6, 0), "D3": (21.5, 48.6, 0),
     # e-stop sense
     "U5": (20.0, 57.5, 0), "R11": (12.5, 63.5, 90), "D5": (20.0, 62.5, 0),
-    # bottom edge: JST-XH
-    "J3": (16.7, 67.45, 0), "J4": (30.6, 67.45, 0), "J5": (39.5, 67.45, 0),
-    # right edge
-    "J10": (50.84, 26.68, 180), "J8": (55.5, 9.5, 0), "J7": (50.9, 34.2, 0), "J9": (50.0, 53.5, 0),
-    "Q1": (49.0, 60.0, 0), "R24": (54.0, 60.0, 90),
+    # bottom-left: HX711 cable (clear of the microSD end)
+    "J3": (16.7, 67.45, 0),
+    # Teensy
+    "U2": (TX, TY, 0),
+    # right column A: keyed box headers
+    "J10": (51.0, 8.0, 0), "J7": (51.0, 37.6, 0),
+    "RN1": (50.0, 57.2, 0), "RN2": (54.0, 57.2, 0),        # panel series 1k, next to J7
+    # right column B: cable connectors
+    "J8": (61.3, 17.6, 90), "J9": (61.0, 27.5, 90),
+    "Q1": (60.5, 32.7, 0), "R24": (63.6, 32.7, 90),
+    "J4": (61.0, 41.8, 90), "J5": (61.0, 52.0, 90),
     # under the Teensy (between the header rows)
-    "D4": (36.6, 5.0, 0), "C3": (41.3, 8.5, 90),
-    "R5": (31.8, 19.5, 90), "R6": (34.4, 19.5, 90), "R20": (38.2, 22.5, 90), "R21": (41.0, 22.5, 90),
+    "D4": (35.0, 5.0, 0), "C3": (40.6, 5.5, 90),
+    "RN6": (40.8, 11.0, 0), "RN5": (40.8, 17.5, 0),        # expansion ADC series 1k
+    "R5": (31.8, 19.5, 90), "R6": (34.4, 19.5, 90), "R20": (38.0, 22.8, 90), "R21": (41.0, 22.8, 90),
     "R12": (31.8, 29.5, 90), "C9": (34.4, 29.5, 90),
     "R7": (31.8, 34.0, 90), "R8": (34.2, 34.0, 90), "C7": (36.6, 34.0, 90), "R9": (39.0, 34.0, 90), "R10": (41.4, 34.0, 90),
     "C8": (31.8, 40.0, 90), "R22": (34.2, 40.0, 90), "R23": (36.6, 40.0, 90),
-    "R13": (31.8, 46.0, 90), "C10": (34.2, 46.0, 90), "R14": (36.6, 46.0, 90), "C11": (39.0, 46.0, 90), "R15": (41.4, 46.0, 90),
-    "C12": (31.8, 52.0, 90), "R16": (34.2, 52.0, 90), "C13": (36.6, 52.0, 90), "R17": (39.0, 52.0, 90), "C14": (41.4, 52.0, 90),
-    "R18": (31.8, 58.0, 270), "C15": (34.2, 58.0, 90), "R19": (36.6, 58.0, 90),
+    "R25": (31.8, 46.5, 90), "R19": (36.6, 46.5, 90),
+    "RN3": (33.0, 52.6, 0), "C15": (36.6, 52.6, 90), "RN4": (40.8, 52.6, 0),
+    "C10": (31.8, 58.4, 90), "C11": (34.2, 58.4, 90), "C12": (36.6, 58.4, 90), "C13": (39.0, 58.4, 90), "C14": (41.4, 58.4, 90),
+    # test points: TP1 by the input, the rest along the bottom (flat pads, under the SD end)
+    "TP1": (25.6, 4.0, 0),
+    "TP2": (30.0, 69.5, 0), "TP3": (33.0, 69.5, 0), "TP4": (36.0, 69.5, 0),
+    "TP5": (39.0, 69.5, 0), "TP6": (42.0, 69.5, 0), "TP7": (45.0, 69.5, 0),
     # mounting holes and fiducials
     "H1": (3.5, 3.5, 0), "H2": (W - 3.5, 3.5, 0), "H3": (3.5, H - 3.5, 0), "H4": (W - 3.5, H - 3.5, 0),
-    "FID1": (8.8, 1.8, 0), "FID2": (56.0, 63.0, 0), "FID3": (8.5, 66.5, 0),
+    "FID1": (8.8, 1.8, 0), "FID2": (62.0, 60.5, 0), "FID3": (8.5, 66.5, 0),
 }
 # Parts hidden under the Teensy: their reference designators go to F.Fab only.
-UNDER_TEENSY = {r for r, (x, y, _) in PLACE.items() if TX + 1.5 < x < TX + 13.7 and r != "U2"}
+UNDER_TEENSY = {r for r, (x, y, _) in PLACE.items()
+                if TX + 1.5 < x < TX + 13.7 and y < TY + 60 and r != "U2"}
 
 LABELS = [  # (text, x, y, size, angle, layer). Bottom silk carries the full pinout legend.
     ("24V IN", 9.0, 12.6, 0.8, 90, "F.SilkS"),
     ("E-STOP", 9.0, 57.5, 0.8, 90, "F.SilkS"),
-    ("EXPANSION", 55.6, 23.7, 0.8, 90, "F.SilkS"),
-    ("OLED", 53.2, 11.4, 0.8, 90, "F.SilkS"),
+    ("J10 EXPANSION", 52.3, 1.45, 0.8, 0, "F.SilkS"),
+    ("J7 PANEL", 52.3, 54.3, 0.8, 0, "F.SilkS"),
+    ("OLED", 61.3, 8.2, 0.8, 0, "F.SilkS"),
+    ("SYNC", 61.0, 21.1, 0.8, 0, "F.SilkS"),
+    ("LIM NEAR", 61.0, 35.4, 0.8, 0, "F.SilkS"),
+    ("LIM FAR", 61.0, 45.6, 0.8, 0, "F.SilkS"),
+    ("5V", 30.0, 67.6, 0.8, 0, "F.SilkS"), ("3V3", 33.0, 67.6, 0.8, 0, "F.SilkS"),
+    ("3VA", 36.0, 67.6, 0.8, 0, "F.SilkS"), ("ENA", 39.0, 67.6, 0.8, 0, "F.SilkS"),
+    ("GND", 42.0, 67.6, 0.8, 0, "F.SilkS"), ("GND", 45.0, 67.6, 0.8, 0, "F.SilkS"),
     ("J1 24V IN: +24V (before contactor) / 0V", 14.2, 16.0, 0.9, 90, "B.SilkS"),
     ("J2 TB6600: PUL+ PUL- DIR+ DIR- ENA+ ENA-", 15.6, 16.0, 0.9, 90, "B.SilkS"),
     ("J3 HX711: 3V3A GND DOUT SCK", 17.0, 16.0, 0.9, 90, "B.SilkS"),
     ("J4/J5 LIMIT NEAR/FAR: SIG GND (NC sw)", 18.4, 16.0, 0.9, 90, "B.SilkS"),
-    ("J6 E-STOP SENSE: 24V after contactor / 0V", 19.8, 16.0, 0.9, 90, "B.SilkS"),
+    ("J6 E-STOP: 24V after contactor / its 0V (isolated)", 19.8, 16.0, 0.9, 90, "B.SilkS"),
     ("J7 PANEL: START STOP JOG+ JOG- HOME TARE", 21.2, 16.0, 0.9, 90, "B.SilkS"),
-    ("J8 OLED: GND 3V3 SCL SDA   J9 SYNC: +5V LED-", 22.6, 16.0, 0.9, 90, "B.SilkS"),
+    ("J8 OLED (PH): GND 3V3 SCL SDA   J9 SYNC: +5V LED-", 22.6, 16.0, 0.9, 90, "B.SilkS"),
     ("J10 EXPANSION (phase 2)   Cut Teensy VUSB-VIN", 24.0, 16.0, 0.9, 90, "B.SilkS"),
-    ("TENSOMETER CONTROLLER rev 0.3", 25.6, 16.0, 0.9, 90, "B.SilkS"),
+    ("TENSOMETER CONTROLLER rev 0.4", 25.4, 16.0, 0.9, 90, "B.SilkS"),
 ]
 
 
@@ -259,7 +351,7 @@ def main(out_dir, net_xml):
     ds.SetCopperLayerCount(2)
     tb = board.GetTitleBlock()
     tb.SetTitle("Tensometer controller board")
-    tb.SetRevision("0.3")
+    tb.SetRevision("0.4")
     tb.SetDate("2026-11-16")
     tb.SetComment(0, "Generated by hardware/controller-board/tools (gen_pcb.py placement, route_board.py routing)")
 
@@ -281,7 +373,7 @@ def main(out_dir, net_xml):
         x, y, rot = PLACE[ref]
         fp.SetPosition(pt(x, y))
         fp.SetOrientationDegrees(rot)
-        if ref in UNDER_TEENSY or ref.startswith(("H", "FID")):
+        if ref in UNDER_TEENSY or ref.startswith(("H", "FID")) or ref in ("J7", "J10"):  # J7/J10: labelled by text
             fp.Reference().SetLayer(pcbnew.F_Fab)   # covered by the module / not useful on silk
         for pad in fp.Pads():
             name = nets.get(ref, {}).get(pad.GetNumber())
@@ -306,31 +398,7 @@ def main(out_dir, net_xml):
     # Pre-routed GND taps for pads the router walls in: it judges plane connectivity on
     # zone outlines, so a GND pad boxed in by signal tracks on both layers ships
     # unconnected. (pad, via offset from pad in mm); 0.4 mm track, 0.6/0.3 via.
-    taps = [(board.FindFootprintByReference(r).FindPadByNumber(n), d) for (r, n), d in GND_TAPS.items()]
-    for fp in board.GetFootprints():
-        pads = list(fp.Pads())
-        if len(pads) != 2 or any(p.HasHole() for p in pads):
-            continue
-        for pad in pads:
-            if pad.GetNetname() != "GND":
-                continue
-            c, p = fp.GetPosition(), pad.GetPosition()
-            vx, vy = p.x - c.x, p.y - c.y
-            n = (vx * vx + vy * vy) ** 0.5
-            ux, uy = vx / n, vy / n
-            bb = pad.GetBoundingBox()
-            half = abs(ux) * bb.GetWidth() / 2 + abs(uy) * bb.GetHeight() / 2
-            d = pcbnew.ToMM(half) + TAP_GAP
-            taps.append((pad, (ux * d, uy * d)))
-    for pad, (dx, dy) in taps:
-        p0 = pad.GetPosition()
-        p1 = pcbnew.VECTOR2I(p0.x + mm(dx), p0.y + mm(dy))
-        tr = pcbnew.PCB_TRACK(board)
-        tr.SetStart(p0); tr.SetEnd(p1); tr.SetWidth(mm(0.4)); tr.SetLayer(pcbnew.F_Cu)
-        tr.SetNet(net_objs["GND"]); board.Add(tr)
-        v = pcbnew.PCB_VIA(board)
-        v.SetPosition(p1); v.SetWidth(mm(0.6)); v.SetDrill(mm(0.3)); v.SetNet(net_objs["GND"])
-        board.Add(v)
+    add_gnd_taps(board, net_objs["GND"])
 
     place_references(board)
     gnd = net_objs["GND"]

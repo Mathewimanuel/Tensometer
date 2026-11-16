@@ -3,7 +3,8 @@
 Usage: python3 drc.py <board.kicad_pcb> <report.rpt> [--routed]
 Unrouted connections are expected while the board is placement-only; everything else
 (courtyard overlaps, clearance, items off the board) should be zero. With --routed,
-unconnected items and starved thermals count too and a non-zero total fails the run.
+unconnected items, starved thermals and silkscreen overlaps count too and a non-zero
+total fails the run.
 """
 import collections
 import re
@@ -21,9 +22,12 @@ def main(pcb, rpt, routed=False):
         print(f"{n:4d}  {k}")
     # Expected while rough: unrouted nets; lib warnings when the stock libs are not in this
     # machine's global library table; cosmetic silkscreen hits.
-    expected = ("lib_footprint_issues", "silk_overlap", "silk_over_copper", "silk_edge_clearance")
+    # lib_footprint_issues only appear when the stock libraries are not in this machine's
+    # global table. Silk overlapping copper is clipped by the fab; silk-on-silk and silk
+    # off the edge are real (legibility) and count once the board is routed.
+    expected = ("lib_footprint_issues", "silk_over_copper")
     if not routed:
-        expected += ("unconnected_items", "starved_thermal")
+        expected += ("unconnected_items", "starved_thermal", "silk_overlap", "silk_edge_clearance")
     real = {k: n for k, n in kinds.items() if k not in expected}
     print("PLACEMENT/ELECTRICAL ISSUES:", sum(real.values()), real or "")
     return 1 if routed and real else 0

@@ -9,6 +9,7 @@ island removal -> drop stitching vias left in removed islands -> refill.
 Usage: python3 route_board.py <placement.kicad_pcb> <project.kicad_pro> <out.kicad_pcb> <krt_dir>
 """
 import math
+import re
 import os
 import shutil
 import subprocess
@@ -20,15 +21,16 @@ import pcbnew
 from gen_pcb import add_zone
 
 # IPC-2221 sizing, 1 oz outer copper, 10 C rise: 0.25 mm carries ~0.8 A, 0.4 mm ~1.2 A,
-# 0.5 mm ~1.5 A. Board currents: 5 V rail <= 0.5 A (buck rated 1 A), 24 V input < 0.2 A,
+# 0.5 mm ~1.5 A, 1.0 mm ~2.5 A. The 24 V input path is 1.0 mm: it only draws ~0.15 A
+# in normal running, but it is the one path that sees inrush, fuse-trip and TVS currents. Board currents: 5 V rail <= 0.5 A (buck rated 1 A), 24 V input < 0.2 A,
 # everything else is logic. +3V3 here only feeds pull-ups, the OLED and the panel LED
 # (the Teensy's own regulator is limited to ~250 mA), so 0.25 mm is ample and keeps the
 # pull-up fan-out under the Teensy routable. All vias 0.6/0.3 mm (JLC standard, no
 # surcharge; a 0.3 mm barrel carries well over 1 A).
 # No via-in-pad: JLC standard vias are not filled/capped, solder would wick into them.
 RULES = ["--track-width", "0.25", "--clearance", "0.2", "--same-net-pad-clearance", "0.2"]
-POWER = {"+24V": 0.5, "/24V_F": 0.5, "/VIN_24": 0.5, "+5V": 0.5, "/VIN_T": 0.5,
-         "+3V3": 0.25, "+3.3VA": 0.4, "GND": 0.5}
+POWER = {"+24V": 1.0, "/24V_F": 1.0, "/VIN_24": 1.0, "+5V": 0.5, "/VIN_T": 0.5,
+         "+3V3": 0.25, "+3.3VA": 0.4, "GND": 0.5, "/24V_SW": 0.4, "/ESTOP_RTN": 0.4}
 
 
 def run(cmd, log):
@@ -178,32 +180,110 @@ def stitch(out):
     print(f"stitching vias: {len(placed)}")
 
 
-def prune(out):
-    """After the final fill: remove GND vias with no track that no longer land in pour on
-    both layers (their fragment pair was walled in and removed as an island)."""
-    b = pcbnew.LoadBoard(out)
-    fills = {}
+def gnd_clusters(b):
+    """Group GND copper (pour fragments, pads, tracks, vias) into connected clusters by
+    geometry. Returns (clusters, main): lists of (kind, item) and the largest cluster."""
+    lays = (pcbnew.F_Cu, pcbnew.B_Cu)
+    nodes = []   # (kind, item, layers, bbox, test(point, layer, radius))
     for z in b.Zones():
         lay = z.GetLayerSet().Seq()[0]
-        fills[lay] = z.GetFilledPolysList(lay)
-    ends = set()
+        f = z.GetFilledPolysList(lay)
+        for i in range(f.OutlineCount()):
+            ol = f.Outline(i)
+            nodes.append(("zone", (lay, i), (lay,), ol.BBox(),
+                          (lambda ol, lay: lambda p, l, r: l == lay and ol.Collide(p, r))(ol, lay), []))
+    for fp in b.GetFootprints():
+        for pad in fp.Pads():
+            if pad.GetNetname() == "GND":
+                pl = tuple(l for l in lays if pad.IsOnLayer(l))
+                nodes.append(("pad", pad, pl, pad.GetBoundingBox(),
+                              (lambda pad, pl: lambda p, l, r: l in pl and pad.HitTest(p, r))(pad, pl),
+                              [(pad.GetPosition(), l, 0) for l in pl]))
     for t in b.GetTracks():
-        if t.GetClass() != "PCB_VIA":
-            ends.add((t.GetStart().x, t.GetStart().y))
-            ends.add((t.GetEnd().x, t.GetEnd().y))
+        if t.GetNetname() != "GND":
+            continue
+        if t.GetClass() == "PCB_VIA":
+            nodes.append(("via", t, lays, t.GetBoundingBox(), (lambda t: lambda p, l, r: t.HitTest(p, r))(t),
+                          [(t.GetPosition(), l, t.GetWidth() // 2) for l in lays]))
+        else:
+            lay, w = t.GetLayer(), t.GetWidth() // 2
+            nodes.append(("track", t, (lay,), t.GetBoundingBox(),
+                          (lambda t, lay: lambda p, l, r: l == lay and t.HitTest(p, r))(t, lay),
+                          [(t.GetStart(), lay, w), (t.GetEnd(), lay, w)]))
+    par = list(range(len(nodes)))
+
+    def find(a):
+        while par[a] != a:
+            par[a] = par[par[a]]
+            a = par[a]
+        return a
+    pad_mm = pcbnew.FromMM(1.0)
+    for i, (_, _, _, bb_i, _, pts) in enumerate(nodes):
+        grown = pcbnew.BOX2I(bb_i.GetPosition(), bb_i.GetSize())
+        grown.Inflate(pad_mm)
+        for j, (_, _, _, bb_j, test, _) in enumerate(nodes):
+            if i != j and grown.Intersects(bb_j) and any(test(p, l, r) for p, l, r in pts):
+                par[find(i)] = find(j)
+    groups = {}
+    for i, n in enumerate(nodes):
+        groups.setdefault(find(i), []).append((n[0], n[1]))
+    clusters = list(groups.values())
+    main = max(clusters, key=lambda c: sum(1 for k, _ in c if k == "pad"))
+    return clusters, main
+
+
+def prune(out):
+    """After the final fill: remove stitching vias (vias with no track) that do not tie
+    into the main GND copper. Their pour fragments then go as islands on the refill,
+    instead of shipping as floating copper."""
+    b = pcbnew.LoadBoard(out)
+    clusters, main = gnd_clusters(b)
+    gone = []
+    for c in clusters:
+        if c is main or any(k == "pad" for k, _ in c):
+            continue   # a cluster with a pad is a real disconnection: leave it for DRC
+        gone += [it for k, it in c if k == "via"]
+    for v in gone:
+        b.Remove(v)
+    b.Save(out)
+    print(f"pruned stitching vias: {len(gone)}")
+
+
+def trim(out):
+    """Remove router stubs that KiCad's own DRC reports as track_dangling (a segment
+    with an end touching nothing). One pass; returns how many went (the caller repeats,
+    since removing a stub can expose the next one)."""
+    rpt = out + ".trim.rpt"
+    subprocess.run([sys.executable, __file__, "--drc", out, rpt], check=True)
+    text = open(rpt).read()
+    os.remove(rpt)
+    hits = re.findall(r"\[track_dangling\].*?\n.*?\n\s*@\(([-\d.]+) mm, ([-\d.]+) mm\): Track \[([^\]]*)\]", text)
+    if not hits:
+        return 0
+    b = pcbnew.LoadBoard(out)
     gone = []
     for t in list(b.GetTracks()):
-        if t.GetClass() != "PCB_VIA" or t.GetNetname() != "GND":
+        if t.GetClass() == "PCB_VIA":
             continue
-        p = t.GetPosition()
-        if (p.x, p.y) in ends:
-            continue
-        if not all(fills[lay].Collide(p, t.GetWidth() // 2) for lay in (pcbnew.F_Cu, pcbnew.B_Cu)):
-            gone.append(t)
+        for x, y, net in hits:
+            px, py = pcbnew.FromMM(float(x)), pcbnew.FromMM(float(y))
+            if t.GetNetname().lstrip("/") == net.lstrip("/") and any(
+                    abs(e.x - px) < 1000 and abs(e.y - py) < 1000 for e in (t.GetStart(), t.GetEnd())):
+                gone.append(t)
+                break
     for t in gone:
         b.Remove(t)
     b.Save(out)
-    print(f"pruned stitching vias: {len(gone)}")
+    print(f"trimmed dangling track segments: {len(gone)}")
+    return len(gone)
+
+
+def strip(placement, src):
+    """Copy of the placement without its pours (the router lays its own plane)."""
+    b = pcbnew.LoadBoard(placement)
+    for z in list(b.Zones()):
+        b.Remove(z)
+    b.Save(src)
 
 
 def unconnected(out):
@@ -235,10 +315,7 @@ def main(placement, pro, out, krt):
 def route_once(placement, pro, out, krt, b_cost, ordering):
     work = tempfile.mkdtemp(prefix="route_")
     src = os.path.join(work, "in.kicad_pcb")
-    b = pcbnew.LoadBoard(placement)
-    for z in list(b.Zones()):
-        b.Remove(z)
-    b.Save(src)
+    subprocess.run([sys.executable, __file__, "--strip", placement, src], check=True)
     for name in ("in", "planes"):
         shutil.copy(pro, os.path.join(work, f"{name}.kicad_pro"))
 
@@ -261,6 +338,8 @@ def route_once(placement, pro, out, krt, b_cost, ordering):
 
     # Fresh processes: reusing pcbnew objects across these steps in one process hands
     # back untyped SWIG objects in KiCad 7.
+    while subprocess.run([sys.executable, __file__, "--trim", out]).returncode == 3:
+        pass
     subprocess.run([sys.executable, __file__, "--pour", out], check=True)
     subprocess.run([sys.executable, __file__, "--fill", out], check=True)
     subprocess.run([sys.executable, __file__, "--stitch", out], check=True)
@@ -277,6 +356,12 @@ if __name__ == "__main__":
     try:
         if sys.argv[1] == "--pour":
             pour(sys.argv[2])
+        elif sys.argv[1] == "--trim":
+            if trim(sys.argv[2]):
+                sys.stdout.flush()
+                os._exit(3)   # something went: run again until a pass removes nothing
+        elif sys.argv[1] == "--strip":
+            strip(sys.argv[2], sys.argv[3])
         elif sys.argv[1] == "--drc":
             drc(sys.argv[2], sys.argv[3])
         elif sys.argv[1] == "--prune":

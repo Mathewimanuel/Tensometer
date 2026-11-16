@@ -3,7 +3,7 @@
 BOM columns: Comment, Designator, Footprint, LCSC Part #   (JLC's template)
 CPL columns: Designator, Mid X, Mid Y, Layer, Rotation      (JLC's template)
 Rotation corrections follow the community database used by the JLCPCB KiCad plugin
-(matthewlai/JLCKicadTools cpl_rotations_db.csv): SOT-23* -90, TSSOP-* / SOIC-* 270.
+(matthewlai/JLCKicadTools cpl_rotations_db.csv), see ROT_FIX.
 Always check part orientation in JLC's placement preview before ordering.
 
 Usage: python3 gen_fab.py <board.kicad_pcb> <out_dir>
@@ -19,7 +19,13 @@ import zipfile
 from design import LCSC, PARTS
 
 LAYERS = "F.Cu,B.Cu,F.Paste,B.Paste,F.SilkS,B.SilkS,F.Mask,B.Mask,Edge.Cuts"
-ROT_FIX = [(r"^SOT-23", -90), (r"^TSSOP-", 270), (r"^SOIC-", 270)]
+# KiCad footprints follow IPC-7351 zero orientation (pin 1 top-left, leads left/right);
+# JLC's EasyEDA footprints put pin 1 bottom-left with leads top/bottom, i.e. a 90 degree
+# difference for SOT/SOIC/TSSOP-style packages. Diodes, LEDs and passives are 0 in both.
+# SMDIP-4 (LTV-817S) is not in the community table; it follows the same convention as
+# SOIC here. Check every polarised part in JLC's preview anyway (README checklist).
+ROT_FIX = [(r"^SOT-23", -90), (r"^TSSOP-", 270), (r"^SOIC-", 270), (r"^SMDIP-", 270),
+           (r"^R_Array_Convex_", 90), (r"^CP_Elec_", 180)]
 
 
 def main(pcb, out_dir):
@@ -27,7 +33,7 @@ def main(pcb, out_dir):
     tmp = tempfile.mkdtemp(prefix="fab_")
     subprocess.run(["kicad-cli", "pcb", "export", "gerbers", "-l", LAYERS, "-o", tmp + "/", pcb],
                    check=True, capture_output=True)
-    subprocess.run(["kicad-cli", "pcb", "export", "drill", "--format", "excellon", "-u", "mm",
+    subprocess.run(["kicad-cli", "pcb", "export", "drill", "--format", "excellon", "-u", "mm", "--excellon-separate-th",
                     "--generate-map", "--map-format", "gerberx2", "-o", tmp + "/", pcb],
                    check=True, capture_output=True)
     gz = os.path.join(out_dir, "gerbers.zip")
