@@ -27,7 +27,7 @@ in its own format.
 | STEP/DIR pull-ups | to the Teensy's +3V3 | to **3V3_PU from U6**, a second TLV75533 on +5V | The Teensy's 3V3 is missing when it is unplugged, not yet up or switched off; STEP/DIR then sat LOW (opto ON) and gave a STEP edge at power-up/unplug, failing bring-up step 2 |
 | Input bulk cap | none | **C16 100 uF 50 V** electrolytic on VIN_24 | Damps cable/contactor ringing; a ceramic alone rings |
 | F1 | 0.5 A / 30 V PTC | 0.5 A / **60 V** PTC | A tripped PTC holds the full supply voltage; 30 V had no margin over 24 V + transients |
-| 24 V tracks | 0.5 mm, 0.2 mm clearance | **1.0 mm** (+24V, 24V_F, VIN_24), and **0.5 mm clearance** for every 24 V field net (also 24V_SW, ESTOP_RTN, OPTO_A) | Inrush, fuse-trip and TVS currents; a solder bridge or debris between 24 V and a 3.3 V signal is the failure that kills the Teensy |
+| 24 V tracks | 0.5 mm, 0.2 mm clearance | **1.0 mm** (+24V, 24V_F, VIN_24), **0.5 mm clearance** for the 24 V supply nets (+24V, 24V_F, VIN_24) and **0.3 mm** for the 24 V sense nets (24V_SW, ESTOP_RTN, OPTO_A) | Inrush, fuse-trip and TVS currents; a solder bridge or debris between 24 V and a 3.3 V signal is the failure that kills the Teensy |
 | E-stop sense return | J6 pin 2 tied to board GND | **Own net ESTOP_RTN** (J6.2, U5 LED cathode, D5) | The opto now actually isolates. Swapped J6 wires only reverse-bias the LED (D5 carries ~2.4 mA through R11) instead of putting post-contactor 24 V onto GND |
 | J10 expansion | Unshrouded 2x8 pins | **Keyed 2x8 box header** (C492443) + **1k in series** on all 9 analog lines (RN5, RN6, R25) + **100R** on SDA/SCL (R26, R27) | A reversed plug put +5 V on an ADC pin; the 1k limits clamp current to ~1.7 mA if the phase 2 board ever drives above 3.3 V |
 | Panel buttons | Straight to Teensy pins | **1k in series** from the cable (RN1, RN2, next to J7); 10k pull-ups (RN3, RN4) and 100n at the pin | ESD / miswiring current limit on a cable that leaves the box |
@@ -59,7 +59,7 @@ underside; do it before plugging it in.
 | Item | Rule | Why |
 |---|---|---|
 | Signal tracks | 0.25 mm, 0.2 mm clearance | Inside JLC's standard tolerance with margin. IPC-2221 B4 (coated, up to 50 V) needs 0.13 mm |
-| 24 V field nets | 0.5 mm clearance to everything (net class Field24V) | Margin against bridges/debris, see above |
+| 24 V field nets | 0.5 mm clearance to everything for +24V, 24V_F, VIN_24 (net class Field24V); 0.3 mm for 24V_SW, ESTOP_RTN, OPTO_A (Field24VSense) | Margin against bridges/debris, see above. The sense nets carry a few mA behind R11, and 0.5 mm on all six nets would not route on this board; 0.3 mm is still above IPC-2221 B4 (0.13 mm up to 50 V) |
 | Power tracks | 1.0 mm: +24V, 24V_F, VIN_24; 0.5 mm: +5V, VIN_T, GND; 0.4 mm: +3.3VA, 24V_SW, ESTOP_RTN; 0.25 mm: +3V3 | IPC-2221, 1 oz, 10 C rise: 1.0 mm ~2.5 A, 0.5 mm ~1.5 A, 0.25 mm ~0.8 A. The 5 V rail is under 0.5 A; +3V3 only feeds pull-ups, the OLED, the panel LED and phase 2 logic |
 | Vias | 0.6 mm pad / 0.3 mm drill, tented | JLC standard, no surcharge |
 | Via-in-pad | None | Unfilled vias wick solder |
