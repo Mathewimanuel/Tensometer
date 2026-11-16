@@ -4,6 +4,11 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: `datalog.py` (CSV/metadata logging and reload)
+Implements the three-file-per-test schema already settled (plotting-design entry below): `<name>_telemetry.csv`, `<name>_events.csv`, `<name>_metadata.json`. `TestLogger` writes metadata immediately on construction, before any telemetry/event row -- a crash mid-test must not lose it, per that same entry. `TelemetryRow`/`EventRow` decode `TELEM_*` flags into named booleans and convert `position_steps` to `position_mm` (via `units.steps_to_mm`) at write time, so the CSV itself is immediately readable in a spreadsheet without needing `protocol.py` to interpret it. Load functions (`load_telemetry`/`load_events`/`load_metadata`) reconstruct the same typed rows for the Review tab, not yet built. No `pandas` dependency added -- stdlib `csv`/`json` are enough for this project's scale, kept deliberately lean.
+
+6 new tests, 78 total, ruff clean.
+
 ### `software/`: `units.py` + `controller.py` (human-units app API)
 Mathew asked to keep building through the rest of the design in one push ("build it all"). Chose PySide6 over PyQt6 for the upcoming GUI (LGPL, no distribution-license concern) -- first real fork left from the earlier design rounds. Built next, in order:
 
