@@ -26,7 +26,8 @@ class ControlPanel(QtWidgets.QWidget):
     jog_stop_requested = QtCore.Signal()
     tare_requested = QtCore.Signal()
     preload_requested = QtCore.Signal(float, float)  # threshold_N, approach_mm_per_min
-    arm_requested = QtCore.Signal()  # opens the ARM config dialog (main_window's job)
+    arm_requested = QtCore.Signal()  # opens the metadata + ARM config dialogs (main_window's job)
+    rearm_requested = QtCore.Signal()  # reuses last specimen metadata, only re-opens ARM config
     start_requested = QtCore.Signal()
     pause_requested = QtCore.Signal()
     resume_requested = QtCore.Signal()
@@ -93,9 +94,17 @@ class ControlPanel(QtWidgets.QWidget):
         preload_layout.addWidget(self.preload_button)
         layout.addWidget(preload_group)
 
+        arm_layout = QtWidgets.QHBoxLayout()
         self.arm_button = QtWidgets.QPushButton("Arm...")
         self.arm_button.clicked.connect(self.arm_requested)
-        layout.addWidget(self.arm_button)
+        arm_layout.addWidget(self.arm_button)
+        self.rearm_button = QtWidgets.QPushButton("Re-arm...")
+        self.rearm_button.setToolTip(
+            "Reuses the last specimen metadata; only re-opens the machine-settings dialog."
+        )
+        self.rearm_button.clicked.connect(self.rearm_requested)
+        arm_layout.addWidget(self.rearm_button)
+        layout.addLayout(arm_layout)
 
         self.start_button = QtWidgets.QPushButton("Start")
         self.start_button.clicked.connect(self.start_requested)
@@ -134,6 +143,7 @@ class ControlPanel(QtWidgets.QWidget):
             self.tare_button: {CoreState.IDLE, CoreState.READY},
             self.preload_button: {CoreState.IDLE, CoreState.READY},
             self.arm_button: {CoreState.IDLE},
+            self.rearm_button: {CoreState.IDLE},
             self.start_button: {CoreState.READY},
             self.pause_button: {CoreState.RUN, CoreState.CYCLE},
             self.resume_button: {CoreState.HOLD},

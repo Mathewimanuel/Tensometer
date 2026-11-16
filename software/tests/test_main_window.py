@@ -243,3 +243,61 @@ def test_transport_error_resets_ui_like_a_disconnect(qtbot, tmp_path, monkeypatc
     assert window.connect_button.text() == "Connect"
     assert window.hello_label.text() == "Not connected"
     assert len(datalog.load_telemetry(tmp_path / "x_telemetry.csv")) == 0
+
+
+def test_rearm_with_no_previous_test_shows_a_message_not_a_crash(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._controller = _FakeController()
+    window._on_rearm_requested()  # must not raise
+    assert "Arm..." in window.statusBar().currentMessage()
+
+
+def test_rearm_reuses_last_metadata_and_writes_a_numbered_log(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(MetadataDialog, "exec", lambda self: QtWidgets.QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(ArmConfigDialog, "exec", lambda self: QtWidgets.QDialog.DialogCode.Accepted)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.output_dir = tmp_path
+    window._controller = _FakeController(
+        hello=proto.HelloBody(0, 5, 1, proto.CAP_CORE, 0, 600_000_000)
+    )
+
+    window._on_arm_requested()  # first real run, named whatever MetadataDialog defaults to
+    assert len(window._controller.armed_with) == 1
+    assert window._last_metadata_fields is not None
+    base_name = window._base_test_name
+    assert (tmp_path / f"{base_name}_metadata.json").exists()
+
+    window._on_rearm_requested()  # re-tune machine settings only
+    assert len(window._controller.armed_with) == 2
+    # Same specimen metadata reused, written under a new, numbered log file.
+    assert (tmp_path / f"{base_name}_run2_metadata.json").exists()
+    reused_meta = datalog.load_metadata(tmp_path / f"{base_name}_run2_metadata.json")
+    first_meta = datalog.load_metadata(tmp_path / f"{base_name}_metadata.json")
+    assert reused_meta.material == first_meta.material
+    assert reused_meta.l0_mm == first_meta.l0_mm
+
+    window._on_rearm_requested()
+    assert (tmp_path / f"{base_name}_run3_metadata.json").exists()
+
+
+def test_disconnect_forgets_last_specimen_so_rearm_is_unavailable(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(MetadataDialog, "exec", lambda self: QtWidgets.QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(ArmConfigDialog, "exec", lambda self: QtWidgets.QDialog.DialogCode.Accepted)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.output_dir = tmp_path
+    window.port_combo.setCurrentText("loop://")
+    window._controller = _FakeController(
+        hello=proto.HelloBody(0, 5, 1, proto.CAP_CORE, 0, 600_000_000)
+    )
+    window._on_arm_requested()
+    assert window._last_metadata_fields is not None
+
+    window._on_connect_clicked()  # disconnect (the fake controller is already "connected")
+
+    assert window._last_metadata_fields is None
+    assert window._base_test_name is None

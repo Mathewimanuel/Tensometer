@@ -38,6 +38,23 @@ def test_start_enabled_only_in_ready(qtbot):
     assert panel.start_button.isEnabled() is False
 
 
+def test_rearm_gated_the_same_as_arm(qtbot):
+    panel = ControlPanel()
+    qtbot.addWidget(panel)
+    panel.update_state(proto.CoreState.IDLE, command_pending=False, connected=True)
+    assert panel.rearm_button.isEnabled() is True
+    panel.update_state(proto.CoreState.READY, command_pending=False, connected=True)
+    assert panel.rearm_button.isEnabled() is False
+
+
+def test_rearm_button_emits_signal(qtbot):
+    panel = ControlPanel()
+    qtbot.addWidget(panel)
+    panel.update_state(proto.CoreState.IDLE, command_pending=False, connected=True)
+    with qtbot.waitSignal(panel.rearm_requested, timeout=1000):
+        panel.rearm_button.click()
+
+
 def test_stop_enabled_regardless_of_state_once_connected(qtbot):
     panel = ControlPanel()
     qtbot.addWidget(panel)

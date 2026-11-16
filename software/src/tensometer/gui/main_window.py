@@ -59,6 +59,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # of writing into wherever the app happens to be launched from.
         self.output_dir = Path("tests_out")
         self._heartbeat_lost = False
+        # Specimen metadata carried forward for Re-arm (Mathew, 2026-11-16): reusing the
+        # last Arm...'d specimen's material/L0/dimensions/notes without re-showing
+        # MetadataDialog. Reset on disconnect/TransportError -- a new connection has no
+        # business assuming the previous session's specimen is still on the machine.
+        self._last_metadata_fields: dict | None = None
+        self._base_test_name: str | None = None
+        self._rearm_count = 0
 
         self._event_signal.connect(self._on_event)
 
@@ -162,7 +169,15 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._logger is not None:
                 self._logger.close()
                 self._logger = None
+            self._forget_last_specimen()
         self._refresh_ui()
+
+    def _forget_last_specimen(self) -> None:
+        """A new connection has no business assuming the previous session's specimen
+        is still on the machine -- Re-arm must not be offered to reuse it."""
+        self._last_metadata_fields = None
+        self._base_test_name = None
+        self._rearm_count = 0
 
     def closeEvent(self, event) -> None:
         """Disconnects the serial port and closes any open test log cleanly on window
@@ -186,6 +201,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cp.tare_requested.connect(self._guarded(lambda: self._controller.tare()))
         cp.preload_requested.connect(self._guarded(lambda t, s: self._controller.preload(t, s)))
         cp.arm_requested.connect(self._on_arm_requested)
+        cp.rearm_requested.connect(self._on_rearm_requested)
         cp.start_requested.connect(self._guarded(lambda: self._controller.start()))
         cp.pause_requested.connect(self._guarded(lambda: self._controller.pause()))
         cp.resume_requested.connect(self._guarded(lambda: self._controller.resume()))
@@ -209,13 +225,40 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapped
 
     def _on_arm_requested(self) -> None:
+        """Full flow: specimen metadata, then machine settings. Starts a fresh
+        Re-arm count -- the next Re-arm will be "<test_name>_run2", not stacked on top
+        of whatever a previous connection's Re-arms had counted up to."""
         if self._controller is None:
             return
         meta_dialog = MetadataDialog(self)
         if meta_dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         metadata_fields = meta_dialog.result_fields()
+        self._last_metadata_fields = metadata_fields
+        self._base_test_name = metadata_fields["test_name"]
+        self._rearm_count = 0
+        self._arm_with_metadata(metadata_fields, metadata_fields["test_name"])
 
+    def _on_rearm_requested(self) -> None:
+        """Reuses the last Arm...'d specimen metadata (material/L0/dimensions/notes) --
+        only the machine-settings (ArmConfigDialog) step repeats. Each Re-arm gets its
+        own log file (the base test name plus a run number), since every run needs its
+        own CSV regardless of how the specimen was described."""
+        if self._controller is None:
+            return
+        if self._last_metadata_fields is None:
+            self.statusBar().showMessage("No previous test to reuse -- use Arm... first.", 5000)
+            return
+        self._rearm_count += 1
+        test_name = f"{self._base_test_name}_run{self._rearm_count + 1}"
+        self._arm_with_metadata(self._last_metadata_fields, test_name)
+
+    def _arm_with_metadata(self, metadata_fields: dict, test_name: str) -> None:
+        """Shared by _on_arm_requested and _on_rearm_requested: show the ARM config
+        dialog, send CMD_ARM, open a new TestLogger for `test_name` using
+        `metadata_fields` as the specimen description."""
+        if self._controller is None:
+            return
         arm_dialog = ArmConfigDialog(self, l0_mm=metadata_fields["l0_mm"])
         if arm_dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
@@ -229,7 +272,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hello = self._controller.hello
         metadata = datalog.TestMetadata(
-            test_name=metadata_fields["test_name"],
+            test_name=test_name,
             started_at_wall_clock=datetime.datetime.now().isoformat(),
             material=metadata_fields["material"],
             l0_mm=metadata_fields["l0_mm"],
@@ -245,7 +288,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # Re-arming without disconnecting first would otherwise leak the previous
             # test's open file handles indefinitely (caught during review, 2026-11-16).
             self._logger.close()
-        self._logger = datalog.TestLogger(self.output_dir, metadata.test_name, metadata)
+        self._logger = datalog.TestLogger(self.output_dir, test_name, metadata)
         self.live_plot.clear_data()
         self.cycle_plot.clear_data()
         self.event_log.clear()
@@ -294,6 +337,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._logger is not None:
             self._logger.close()
             self._logger = None
+        self._forget_last_specimen()
 
     def _on_telemetry(self, body: proto.TelemetryBody) -> None:
         if body.cycle_index > 0 and self.plot_stack.currentWidget() is not self.cycle_plot:

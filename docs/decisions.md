@@ -4,6 +4,15 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: "Re-arm" -- re-tune machine settings without redoing specimen metadata
+Found while actually clicking through the GUI against the sim: there was no way to run a second test on the same specimen without re-entering material/dimensions/notes every time -- `_on_arm_requested` always showed both dialogs, unconditionally. **Decided**: a separate "Re-arm..." control next to "Arm...", not a checkbox or an implicit skip -- `ControlPanel.rearm_button`, gated identically to `arm_button` (IDLE only). It reuses the last `Arm...`'d specimen metadata (`MainWindow._last_metadata_fields`) and only re-opens `ArmConfigDialog`, refactored out into a shared `_arm_with_metadata()` used by both flows.
+
+Each Re-arm still gets its **own** log file -- `<base_test_name>_run2`, `_run3`, ... -- since every run needs its own CSV/events/metadata regardless of how the specimen was described; `MainWindow._rearm_count` tracks this, reset to 0 by a fresh `Arm...`.
+
+**Carried-forward specimen state is reset on disconnect and on `TransportError`** (`_forget_last_specimen()`), not just on a fresh `Arm...` -- a new connection has no business assuming the previous session's specimen is still on the machine. Re-arming with nothing to reuse shows a status message ("use Arm... first"), not a crash.
+
+5 new tests (2 `test_control_panel.py`, 3 `test_main_window.py`). 152 tests total, ruff clean. Confirmed live in the running app (not just the test suite) that the button exists and is correctly labeled/tooltipped.
+
 ### `software/`: FakeFirmware + integration test + standalone sim runner (`tensometer-sim`)
 Mathew's call, before starting on the real firmware command dispatcher: build a protocol-level firmware stand-in first, specifically to find integration gaps between the two halves while they're still cheap to fix. Three pieces:
 

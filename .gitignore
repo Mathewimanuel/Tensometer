@@ -8,3 +8,4 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 *.egg-info
+software/tests_out/
