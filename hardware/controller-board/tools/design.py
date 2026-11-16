@@ -84,10 +84,12 @@ PARTS = [
     # Bulk input cap: damps cable/contactor ringing that a ceramic alone would not.
     ("C16", "Device:C_Polarized", "100u 50V", "Capacitor_SMD:CP_Elec_6.3x7.7",
      {"1": "VIN_24", "2": "GND"}, "power"),
-    # 9-72 V input: the SMBJ28A clamps at up to ~45 V, so the converter must survive
-    # well above that (the R-78E it replaces was rated 36 V max).
-    ("U1", "Regulator_Switching:TSR_1-2450", "TSR 1-4850WI",
-     "Converter_DCDC:Converter_DCDC_TRACO_TSR-1_THT",
+    # 9-72 V input (75 V max): the SMBJ28A clamps at up to ~45 V, so the converter must
+    # survive well above that (the R-78E it replaces was rated 36 V max). Plain 3-pin
+    # SIP, exactly KiCad's footprint (the TRACO TSR 1-WI tried first has extra case pins).
+    # 0.5 A: this board draws ~0.25 A, leaving ~0.25 A for phase 2. Max 100 uF on +5V.
+    ("U1", "Regulator_Switching:R-78HB5.0-0.5", "R-78HB5.0-0.5",
+     "Converter_DCDC:Converter_DCDC_RECOM_R-78HB-0.5_THT",
      {"1": "VIN_24", "2": "GND", "3": "+5V"}, "power"),
     C("C2", "22u 25V", "+5V", "GND", "power"),
     R("R1", "2k2", "+5V", "PWR_LED_A", "power"),
@@ -107,8 +109,14 @@ PARTS = [
         "15": "GND", "17": "GND", "5": None, "3": None,   # spare gates: inputs grounded
         "10": "GND", "20": "+5V"}, "driver"),
     C("C4", "100n", "+5V", "GND", "driver"),
-    R("R2", "10k", "+3V3", "STEP", "driver"),    # STEP idles HIGH = opto off
-    R("R3", "10k", "+3V3", "DIR", "driver"),
+    # STEP/DIR pull-ups need a 3.3 V that exists whenever +5V does, Teensy plugged in or
+    # not (the Teensy's own 3V3 is absent when it is unplugged, not yet up, or off, and
+    # then STEP/DIR would sit LOW = opto ON). U6 is a second TLV75533 for just this.
+    ("U6", "Regulator_Linear:TLV75533PDBV", "TLV75533", "Package_TO_SOT_SMD:SOT-23-5",
+     {"1": "+5V", "2": "GND", "3": "+5V", "4": None, "5": "3V3_PU"}, "driver"),
+    C("C17", "1u", "3V3_PU", "GND", "driver"),
+    R("R2", "10k", "3V3_PU", "STEP", "driver"),    # STEP idles HIGH = opto off
+    R("R3", "10k", "3V3_PU", "DIR", "driver"),
     R("R4", "10k", "ENA", "GND", "driver"),      # ENA LOW = opto on = TB6600 DISABLED
     ("J2", "Connector_Generic:Conn_01x06", "TB6600", "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_6-G-5,08_1x06_P5.08mm_Horizontal", {
         "1": "+5V", "2": "PUL_N", "3": "+5V", "4": "DIR_N", "5": "+5V", "6": "ENA_N"}, "driver"),
@@ -190,11 +198,14 @@ PARTS = [
     ("J10", "Connector_Generic:Conn_02x08_Odd_Even", "EXPANSION", "Connector_IDC:IDC-Header_2x08_P2.54mm_Vertical", {
         "1": "ADC_A0_C", "2": "ADC_A1_C", "3": "ADC_A2_C", "4": "ADC_A3_C",
         "5": "ADC_B0_C", "6": "ADC_B1_C", "7": "ADC_B2_C", "8": "ADC_B3_C",
-        "9": "V_EXC_SENSE_C", "10": "GND", "11": "I2C_SDA", "12": "I2C_SCL",
+        "9": "V_EXC_SENSE_C", "10": "GND", "11": "I2C_SDA_X", "12": "I2C_SCL_X",
         "13": "+3V3", "14": "+5V", "15": "GND", "16": "GND"}, "expansion"),
     RN("RN5", "1k", [(f"ADC_A{i}_C", f"ADC_A{i}") for i in range(4)], "expansion"),
     RN("RN6", "1k", [(f"ADC_B{i}_C", f"ADC_B{i}") for i in range(4)], "expansion"),
     R("R25", "1k", "V_EXC_SENSE_C", "V_EXC_SENSE", "expansion"),
+    # 100R on the I2C lines that leave the box (fault current limit, edge damping).
+    R("R26", "100", "I2C_SDA_X", "I2C_SDA", "expansion"),
+    R("R27", "100", "I2C_SCL_X", "I2C_SCL", "expansion"),
 
     # ---------------- Test points (bare pads, not assembled): bring-up step 2 and rails
     TP("TP1", "VIN_24"), TP("TP2", "+5V"), TP("TP3", "+3V3"), TP("TP4", "+3.3VA"),
@@ -219,6 +230,7 @@ LCSC = {
     "R1": "C17520", "R7": "C17520", "R9": "C17520",                       # 2k2
     "R2": "C17414", "R3": "C17414", "R4": "C17414", "R12": "C17414",      # 10k
     "R25": "C17513",                                                      # 1k
+    "R26": "C17408", "R27": "C17408",                                     # 100R
     "RN1": "C20197", "RN2": "C20197", "RN5": "C20197", "RN6": "C20197",   # 1k x4 0603 array (basic)
     "RN3": "C29718", "RN4": "C29718",                                     # 10k x4 0603 array (basic)
     "R5": "C17408", "R6": "C17408", "R22": "C17408", "R24": "C17408",     # 100R
@@ -231,7 +243,7 @@ LCSC = {
     "C1": "C13585",                                                       # 10u 50V 1206
     "C2": "C45783",                                                       # 22u 25V 0805
     "C3": "C15850", "C6": "C15850",                                       # 10u 25V 0805
-    "C5": "C28323",                                                       # 1u 50V 0805
+    "C5": "C28323", "C17": "C28323",                                      # 1u 50V 0805
     "C16": "C47023117",                                                   # 100u 50V electrolytic 6.3x7.7
     "C4": "C49678", "C7": "C49678", "C8": "C49678", "C9": "C49678", "C10": "C49678", "C11": "C49678",
     "C12": "C49678", "C13": "C49678", "C14": "C49678", "C15": "C49678",  # 100n 50V
@@ -243,9 +255,9 @@ LCSC = {
     "D5": "C81598",     # 1N4148W (basic)
     "F1": "C19078719",  # 1812L050/60GR, 0.5 A / 60 V PTC (extended)
     "Q1": "C20917",     # AO3400A (basic)
-    "U1": "C6561272",   # TRACO TSR 1-4850WI, 9-72 V in, 5 V 1 A, THT (extended; low JLC stock, also at Farnell/Mouser/RS)
+    "U1": "C7333563",   # RECOM R-78HB5.0-0.5, 9-72 V in, 5 V 0.5 A, THT (LCSC stock 0 at snapshot: buy at Farnell/RS/Mouser, hand-solder)
     "U3": "C135583",    # 74AHCT244PW,118 TSSOP-20, Nexperia (extended)
-    "U4": "C404027",    # TLV75533PDBVR (extended)
+    "U4": "C404027", "U6": "C404027",   # TLV75533PDBVR (extended)
     "U5": "C109227",    # LTV-817S-TA1-C (basic)
     # connectors (THT, extended)
     "J1": "C8465", "J6": "C8465",          # WJ500V-5.08-2P screw terminal
@@ -292,7 +304,7 @@ MPN = {
     "C404027": ("TLV75533PDBVR", "Texas Instruments"),
     "C441208": ("KF2EDGR-5.08-6P", "Cixi Kefa Elec"),
     "C492443": ("BH254V-16P", "XFCN"),
-    "C6561272": ("TSR 1-4850WI", "TRACO POWER"),
+    "C7333563": ("R-78HB5.0-0.5", "Recom Power"),
     "C19078719": ("1812L050/60GR", "LUTE"),
     "C47023117": ("RVT50V100M6X8", "jieerrui"),
 }

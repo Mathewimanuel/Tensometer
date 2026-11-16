@@ -169,6 +169,9 @@ class Sheet:
             mpn, maker = MPN[LCSC[ref]]
             node.append(["property", Q("MPN"), Q(mpn), ["at", x, y, 0], eff(True)])
             node.append(["property", Q("Manufacturer"), Q(maker), ["at", x, y, 0], eff(True)])
+        elif ref == "U2":   # supplied by the user, plugged into the socket: not assembled
+            node.append(["property", Q("MPN"), Q("TEENSY41"), ["at", x, y, 0], eff(True)])
+            node.append(["property", Q("Manufacturer"), Q("PJRC"), ["at", x, y, 0], eff(True)])
         for num in pins_of(sym):
             node.append(["pin", Q(num), ["uuid", Q(uid("pin", ref, num))]])
         node.append(["instances", ["project", Q(PROJECT),
