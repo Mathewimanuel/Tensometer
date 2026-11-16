@@ -197,7 +197,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "in.kicad_pro",
+    "filename": "tensometer-controller.kicad_pro",
     "version": 1
   },
   "net_settings": {
@@ -217,6 +217,40 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.5,
+        "diff_pair_gap": 0.25,
+        "diff_pair_via_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "Field24V",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.4,
+        "via_diameter": 0.8,
+        "via_drill": 0.4,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.3,
+        "diff_pair_gap": 0.25,
+        "diff_pair_via_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "Field24VSense",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.4,
+        "via_diameter": 0.8,
+        "via_drill": 0.4,
         "wire_width": 6
       },
       {
@@ -245,10 +279,6 @@
     "netclass_patterns": [
       {
         "netclass": "Power",
-        "pattern": "+24V"
-      },
-      {
-        "netclass": "Power",
         "pattern": "+5V"
       },
       {
@@ -265,15 +295,31 @@
       },
       {
         "netclass": "Power",
+        "pattern": "/VIN_T"
+      },
+      {
+        "netclass": "Field24V",
+        "pattern": "+24V"
+      },
+      {
+        "netclass": "Field24V",
         "pattern": "/24V_F"
       },
       {
-        "netclass": "Power",
+        "netclass": "Field24V",
         "pattern": "/VIN_24"
       },
       {
-        "netclass": "Power",
-        "pattern": "/VIN_T"
+        "netclass": "Field24VSense",
+        "pattern": "/24V_SW"
+      },
+      {
+        "netclass": "Field24VSense",
+        "pattern": "/ESTOP_RTN"
+      },
+      {
+        "netclass": "Field24VSense",
+        "pattern": "/OPTO_A"
       }
     ]
   },

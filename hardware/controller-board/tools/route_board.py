@@ -302,15 +302,22 @@ def drc(out, rpt):
     pcbnew.WriteDRCReport(pcbnew.LoadBoard(out), rpt, pcbnew.EDA_UNITS_MILLIMETRES, True)
 
 
-def main(placement, pro, out, krt):
+def main(placement, pro, final, krt):
+    # Attempts go to a scratch file; only a fully connected board replaces `final`, so a
+    # failed or interrupted run never leaves a half-routed board in the repo.
+    scratch = tempfile.mkdtemp(prefix="attempt_")
+    out = os.path.join(scratch, os.path.basename(final))
     for b_cost, ordering, extra in ATTEMPTS:
         work = route_once(placement, pro, out, krt, b_cost, ordering, extra)
         n = unconnected(out)
         print(f"B.Cu cost {b_cost}, ordering {ordering} {' '.join(extra)}: {n} unconnected (logs in {work})",
               flush=True)
         if n == 0:
-            os.remove(out + ".drc.rpt")
-            print(f"routed board: {out}")
+            shutil.copy(out, final)
+            dst = os.path.splitext(final)[0] + ".kicad_pro"
+            if os.path.abspath(pro) != os.path.abspath(dst):
+                shutil.copy(pro, dst)
+            print(f"routed board: {final}")
             return
     raise SystemExit("no router setting gave a fully connected board")
 
