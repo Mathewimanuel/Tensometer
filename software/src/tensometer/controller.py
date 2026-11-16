@@ -148,7 +148,12 @@ class Controller:
         return self._send(proto.MsgId.CMD_RESUME)
 
     def stop(self) -> int:
-        return self._send(proto.MsgId.CMD_STOP)
+        """Emergency abort -- bypasses the one-command-at-a-time rule (never raises
+        AlreadyPendingError). Connection must still be real (NotConnectedError if not),
+        but a STOP must never wait behind an unrelated in-flight command (session.py's
+        begin_emergency_command)."""
+        self._ensure_connected()
+        return self._transport.send_emergency_command(int(proto.MsgId.CMD_STOP))
 
     def reset(self) -> int:
         return self._send(proto.MsgId.CMD_RESET)

@@ -87,6 +87,26 @@ def test_nack_resolves_pending_command_with_error():
     assert s.has_pending_command() is False
 
 
+def test_emergency_command_bypasses_pending():
+    s = sess.Session()
+    s.begin_command(int(proto.MsgId.CMD_HOME), b"", now=0.0)  # left pending, no ACK
+    seq, _wire = s.begin_emergency_command(int(proto.MsgId.CMD_STOP), b"", now=0.1)
+    assert seq == 1  # a real new seq, not rejected
+    assert s.has_pending_command() is True  # now tracking STOP instead
+
+
+def test_stale_ack_after_emergency_command_is_ignored():
+    s = sess.Session()
+    home_seq, _ = s.begin_command(int(proto.MsgId.CMD_HOME), b"", now=0.0)
+    s.begin_emergency_command(int(proto.MsgId.CMD_STOP), b"", now=0.1)
+    # The original HOME's ACK arrives late, after STOP already replaced it as pending.
+    ack = proto.AckBody(acked_msg_id=int(proto.MsgId.CMD_HOME), acked_seq=home_seq)
+    f = wire_frame.Frame(msg_id=int(proto.MsgId.ACK), seq=0, body=messages.encode_ack(ack))
+    events = s.feed_frame(f, now=0.2)
+    assert events == []  # ignored: doesn't match STOP's seq
+    assert s.has_pending_command() is True  # STOP is still the one pending
+
+
 def test_command_times_out_via_tick():
     s = sess.Session()
     seq, _ = s.begin_command(int(proto.MsgId.CMD_HOME), b"", now=0.0)

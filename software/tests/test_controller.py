@@ -156,3 +156,25 @@ def test_second_command_raises_while_one_pending():
             c.tare()
     finally:
         c.disconnect()
+
+
+def test_stop_does_not_wait_behind_a_pending_command():
+    collector = EventCollector()
+    c, _fake_port = _connected_controller(collector)
+    try:
+        c.home()  # left pending, never ACKed
+        seq = c.stop()  # must not raise AlreadyPendingError
+        got = collector.wait_for(lambda e: isinstance(e, sess.UnknownMessage) and e.seq == seq)
+        assert got.msg_id == int(proto.MsgId.CMD_STOP)
+    finally:
+        c.disconnect()
+
+
+def test_stop_still_requires_a_real_connection():
+    c = ctrl.Controller("loop://")
+    c.connect()
+    try:
+        with pytest.raises(ctrl.NotConnectedError):
+            c.stop()
+    finally:
+        c.disconnect()

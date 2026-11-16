@@ -142,6 +142,23 @@ class Session:
         self._pending = _PendingCommand(seq=seq, msg_id=msg_id, sent_at=now)
         return seq, wire_frame.encode(msg_id, seq, body)
 
+    def begin_emergency_command(self, msg_id: int, body: bytes, now: float) -> tuple[int, bytes]:
+        """Like begin_command(), but never raises AlreadyPendingError -- replaces
+        whatever was pending (if anything) rather than queuing behind it. For CMD_STOP
+        only: the protocol accepts it from any state as an immediate abort (skill
+        section 10, "STOP acted on immediately"), and an operator must never have to
+        wait for an unrelated in-flight command to resolve before an emergency stop
+        goes out. Caught while designing the GUI's control panel (2026-11-16) --
+        begin_command()'s one-at-a-time rule would otherwise block exactly this.
+
+        A stale ACK/NACK for whatever was replaced, if it arrives later, is safely
+        ignored by feed_frame() (its seq no longer matches self._pending) -- same
+        already-tested mismatched-seq handling as any other case."""
+        seq = self._next_seq
+        self._next_seq = (self._next_seq + 1) % 256
+        self._pending = _PendingCommand(seq=seq, msg_id=msg_id, sent_at=now)
+        return seq, wire_frame.encode(msg_id, seq, body)
+
     def feed_frame(self, f: wire_frame.Frame, now: float) -> list[SessionEvent]:
         """Call once per complete frame decoded from the incoming byte stream."""
         events: list[SessionEvent] = []

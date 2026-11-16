@@ -74,6 +74,13 @@ class Transport:
         self._write(wire)
         return seq
 
+    def send_emergency_command(self, msg_id: int, body: bytes = b"") -> int:
+        """For CMD_STOP only -- never raises AlreadyPendingError (session.py's
+        begin_emergency_command)."""
+        seq, wire = self._session.begin_emergency_command(msg_id, body, now=time.monotonic())
+        self._write(wire)
+        return seq
+
     def _write(self, data: bytes) -> None:
         with self._write_lock:
             self._serial.write(data)

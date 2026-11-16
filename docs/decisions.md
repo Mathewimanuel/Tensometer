@@ -4,6 +4,15 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: GUI started -- PySide6 + pyqtgraph, headless-tested; one real bug caught and fixed
+Chose PySide6 (previous entry noted this). Added `gui`/`dev` optional-dependency groups (`PySide6`, `pyqtgraph`, `pytest-qt`). Confirmed `QT_QPA_PLATFORM=offscreen` lets Qt widgets be constructed and exercised with no real display -- `tests/conftest.py` sets it before any PySide6 import, so the whole GUI can be tested in CI the same as everything else, not left untested the way a GUI normally would be.
+
+Built so far: `gui/live_plot.py` (`LivePlotWidget` -- force vs. position/time, raw/filtered toggle, cutoff/force-limit reference lines, event markers, redraw decoupled from the 80 Hz data rate via an internal ~30 fps timer) and `gui/cycle_plot.py` (`CyclePlotWidget` -- hysteresis loops overlaid per `cycle_index`, peak-force-per-cycle trend, append-only trend storage to stay fast over a run of thousands of cycles). Both match the plotting-design entry below exactly; 14 new tests via `pytest-qt`.
+
+**One real bug caught while building the control panel, before it shipped**: `Session`'s one-command-at-a-time rule (decisions.md, `session.py` entry) would have made `CMD_STOP` wait behind any other in-flight command -- e.g. a `HOME` that hasn't ACKed yet -- defeating the entire point of an emergency abort button. Fixed with `Session.begin_emergency_command()` (bypasses `AlreadyPendingError`, replaces whatever was pending instead of queuing behind it) and `Transport.send_emergency_command()`/`Controller.stop()` routed through it. A stale ACK/NACK for whatever STOP replaced is safely ignored by `feed_frame()`'s existing seq-mismatch handling -- no new failure mode introduced. 4 new tests (`test_session.py`, `test_controller.py`) confirm STOP bypasses pending and the replaced command's late response is dropped correctly.
+
+96 tests total, ruff clean. Still to build: `control_panel.py`, dialogs (ARM config, specimen metadata), `main_window.py` (top bar/state banner/tabs), `review_tab.py` (load-and-replot), `app.py` entry point, and the CI workflow needs updating to install the `dev` group (now pulling in the Qt stack) and set `QT_QPA_PLATFORM=offscreen`.
+
 ### `software/`: `datalog.py` (CSV/metadata logging and reload)
 Implements the three-file-per-test schema already settled (plotting-design entry below): `<name>_telemetry.csv`, `<name>_events.csv`, `<name>_metadata.json`. `TestLogger` writes metadata immediately on construction, before any telemetry/event row -- a crash mid-test must not lose it, per that same entry. `TelemetryRow`/`EventRow` decode `TELEM_*` flags into named booleans and convert `position_steps` to `position_mm` (via `units.steps_to_mm`) at write time, so the CSV itself is immediately readable in a spreadsheet without needing `protocol.py` to interpret it. Load functions (`load_telemetry`/`load_events`/`load_metadata`) reconstruct the same typed rows for the Review tab, not yet built. No `pandas` dependency added -- stdlib `csv`/`json` are enough for this project's scale, kept deliberately lean.
 
