@@ -4,6 +4,13 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: fixed `tensometer-sim`'s server dying after repeated disconnects
+Found live, not by a test: after Mathew clicked through the GUI against the sim a few times, the sim server became completely unreachable ("connection actively refused") for a later connection attempt. Its own log showed the real cause: `FakeFirmwareDriver._run()`'s reads were wrapped in `try/except` (so a disconnect during a read already returned cleanly), but its **writes were not** -- a client disconnecting mid-tick raised `ConnectionAbortedError` straight out of the background thread, printing an unhandled traceback and killing that thread. This is the exact same lesson already learned and fixed in `transport.py` (the real PC-side driver, docs/decisions.md's crash-fixes entry above) -- just never applied to this file when it was built, since nothing in the automated test suite ever modeled a real abrupt disconnect.
+
+Fixed by making `_write_all()` return `False` on failure instead of raising (same shape as the existing read-failure handling), checked at all three call sites (`HELLO`, `on_frame`'s responses, `tick`'s stream). `run_fake_firmware.py` also now explicitly closes each connection's socket after its session ends, rather than leaving it for GC. 2 new tests model a client that vanishes right after the initial `HELLO`.
+
+**Verified against the actual failure, not just the test suite**: launched a fresh server, scripted 6 back-to-back abrupt connect/disconnect cycles (more than what killed the original), then one more connection afterward -- all 7 got a valid `HELLO` back. 154 tests total, ruff clean.
+
 ### `software/`: "Re-arm" -- re-tune machine settings without redoing specimen metadata
 Found while actually clicking through the GUI against the sim: there was no way to run a second test on the same specimen without re-entering material/dimensions/notes every time -- `_on_arm_requested` always showed both dialogs, unconditionally. **Decided**: a separate "Re-arm..." control next to "Arm...", not a checkbox or an implicit skip -- `ControlPanel.rearm_button`, gated identically to `arm_button` (IDLE only). It reuses the last `Arm...`'d specimen metadata (`MainWindow._last_metadata_fields`) and only re-opens `ArmConfigDialog`, refactored out into a shared `_arm_with_metadata()` used by both flows.
 

@@ -36,16 +36,27 @@ class FakeFirmwareDriver:
         just wants to know when the session ended, not to end it itself."""
         self._thread.join(timeout=timeout)
 
-    def _write_all(self, wires: list[bytes]) -> None:
-        for w in wires:
-            self._serial.write(w)
+    def _write_all(self, wires: list[bytes]) -> bool:
+        """Returns False (instead of raising) on a write failure -- the other end
+        disconnecting is an expected way for this loop to end, not a bug. Caught for
+        real (2026-11-16, docs/decisions.md): writes here were unguarded while reads
+        already were, so a disconnect mid-tick crashed this thread with an unhandled
+        ConnectionAbortedError traceback instead of returning cleanly like a read
+        failure already did."""
+        try:
+            for w in wires:
+                self._serial.write(w)
+        except Exception:  # noqa: BLE001 -- a dev/test tool, not production code
+            return False
+        return True
 
     def _run(self) -> None:
         # Firmware announces itself unprompted once "booted" -- there is no CMD_HELLO,
         # the PC only ever listens for it (skill section 8). The real BOOT -> IDLE
         # self-test sequence isn't modeled; this stand-in just starts already past it.
         self.firmware.state = proto.CoreState.IDLE
-        self._write_all([self.firmware.hello_frame()])
+        if not self._write_all([self.firmware.hello_frame()]):
+            return
 
         while not self._stop.is_set():
             try:
@@ -62,6 +73,8 @@ class FakeFirmwareDriver:
                     f = wire_frame.decode(completed)
                 except wire_frame.FrameError:
                     continue
-                self._write_all(self.firmware.on_frame(f, now))
+                if not self._write_all(self.firmware.on_frame(f, now)):
+                    return
 
-            self._write_all(self.firmware.tick(now))
+            if not self._write_all(self.firmware.tick(now)):
+                return

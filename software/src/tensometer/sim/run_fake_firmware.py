@@ -65,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
                 driver = FakeFirmwareDriver(SocketPort(conn))
                 driver.start()
                 driver.join()  # until the client disconnects (its read() then fails)
+                conn.close()  # not left for GC to get around to eventually
                 print("Disconnected -- waiting for a new connection.")
         except KeyboardInterrupt:
             pass
