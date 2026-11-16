@@ -170,7 +170,10 @@ PLACE = {
     "U2": (TX, TY, 0),
     # right column A: keyed box headers
     "J10": (51.0, 8.0, 0), "J7": (51.0, 37.6, 0),
-    "RN1": (50.0, 57.2, 0), "RN2": (54.0, 57.2, 0),        # panel series 1k, next to J7
+    # panel series 1k, stacked under J7: rotated so the J7 side (pins 1-4) faces east and the
+    # Teensy side (pins 5-8) faces west, toward the BTN pins (the old 0 deg made every output
+    # wrap around its own array, and the router could never close BTN_STOP / BTN_JOG_POS)
+    "RN1": (49.5, 56.9, 180), "RN2": (49.5, 61.0, 180),
     # right column B: cable connectors
     "J8": (61.3, 17.6, 90), "J9": (61.0, 27.5, 90),
     "Q1": (59.8, 32.7, 0), "R24": (63.0, 32.7, 90),
