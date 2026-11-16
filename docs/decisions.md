@@ -4,6 +4,15 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: `transport.py` (thin pyserial driver) + `cli.py` (first runnable entry point)
+Wires `Session` (previous entry) to a real `pyserial` port on a background thread -- the hardware-adjacent thin-driver layer, same split as firmware's `src/` vs `lib/`. `cli.py` is a minimal debug console (`tensometer-cli <port>`), not the real PC app: it exists so there's something to actually execute before the GUI is built, since the earlier wire/session work produced a tested library with no entry point at all.
+
+**Dependency injection for testability**: `Transport.__init__` accepts either a port name string or an already-open serial-like object. Needed because `pyserial`'s `loop://` virtual port is isolated per instance -- a test can't inject simulated incoming bytes (e.g. a fake `HELLO`) into a `Transport` that only ever took a port name, since there'd be no way to reach the one `serial.Serial` object it created internally. 3 new tests exercise the full encode/write/read/decode/`Session` pipeline against `loop://`, not a real Teensy (there's still no command dispatcher on the firmware side to test against). 60 tests total, ruff clean.
+
+Smoke-tested `cli.py` directly (not just via pytest): `--list` enumerates real serial ports correctly; connecting to `loop://` starts, connects, and prints events; a `kill -INT` sent to it over Git Bash on Windows didn't actually deliver a Python-visible `KeyboardInterrupt` (confirmed a Windows/MSYS signal-delivery quirk in the test harness itself, not a bug in `cli.py`'s own `except KeyboardInterrupt` handling, which only matters for a real terminal's Ctrl+C) -- cleaned up the stray process directly by PID rather than a blanket `taskkill` of all `python.exe` (correctly refused by the harness as too broad/destructive for what was actually needed).
+
+Still not built: the command dispatcher (nothing yet turns `Session`/`Transport` events into actual test-running logic) and the GUI.
+
 ### `software/`: `session.py` -- HELLO/seq/heartbeat state (pure logic)
 Built on top of the wire layer (previous entry): `tensometer.session.Session` tracks HELLO handshake state, correlates ACK/NACK/timeout against outgoing commands by `seq`, and implements the heartbeat-health design from the robustness entry below (`HeartbeatLost` distinct from disconnect). Pure logic, no serial I/O or Qt -- 18 new pytest tests feed it constructed `frame.Frame`s and a fake clock directly, no real port or Teensy needed (there's nothing to test against on the firmware side yet anyway: no dispatcher exists).
 
