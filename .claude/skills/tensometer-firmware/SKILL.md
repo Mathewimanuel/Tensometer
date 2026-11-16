@@ -17,6 +17,8 @@ Revision 3 (2026-10-14). Rev 2: design review applied (ENA polarity and reset-sa
 
 **Revision 7 (2026-10-26): no driver buffer; reset-safe pulls missing.** Section 2.1 was wrong: there is no 74AHCT244 (or any) buffer between the Teensy and the TB6600 -- GPIO wires straight to the opto inputs, common-anode @ +5 V confirmed, no external current-limiting resistor added. Mathew confirmed there is **no pull-down on ENA and no pull-up on STEP/DIR anywhere**. This is a confirmed, unfixed safety gap: nothing guarantees the motor stays disabled across a reset or before `setup()` runs. `main.cpp`'s drive-safe comment, which wrongly claimed this protection existed, is corrected. Bench bring-up step 2 (section 13) is expected to fail until a physical pull-down is added. Tracked in issue #18. See `docs/decisions.md` (2026-10-26).
 
+**Revision 8 (2026-11-16): command dispatcher wired; protocol 0.7.** `lib/dispatcher` enforces every `protocol.h` NACK contract and `src/core/comms.cpp` carries the link (section 8). Force fails closed until the HX711 driver exists (#10): every force-dependent command NACKs `BAD_STATE`, so nothing can move. Mathew's decisions: any CRC-valid `CMD_STOP` always stops; jog deadman with an explicit `KEEPALIVE` action and a `JOG_DEADMAN` event (section 8); relieving jog out of a limit `FAULT` (skill 4 rule 4) allowed only if LIMIT_STOP is the only cause that FAULT ever had, with the tripped switch suppressed only until it reads clear continuously for a debounce time, plus a travel cap counted per FAULT episode (`RELIEF_MAX_TRAVEL_STEPS`, 0 until measured); any fault or STOP during a relieving jog blocks relief until RESET; a failed module self-test latches and RESET re-runs it. Bring-up step 4 now gates all motion on verifying the DIR and limit-switch mapping (section 13). See `docs/decisions.md` (2026-11-16).
+
 ## 0. How to work
 
 - Act as a critical senior firmware reviewer. Name failure modes, check timing and margins, prefer correctness over agreement. Do not just agree; double check against this file and the physics.
@@ -354,7 +356,8 @@ Hard stops (section 4) always win.
 - `PROTOCOL_VERSION` = major.minor. Major bump = breaking core change. Adding a module or module messages = minor bump only. Old PC software must still run core tests against newer firmware.
 - HELLO carries version, firmware build, capability bitmask, cell profile, Teensy clock.
 - Every command gets ACK or NACK (error code) echoing `seq`.
-- **`CMD_*` bodies:** defined in `protocol.h`/`lib/messages`, slice by slice as PC-app work needs them (decisions.md 2026-11-13/16). Done (0.5): `SELECT_PROFILE`, `HOME`, `JOG`, `TARE`, `PRELOAD`, `ARM` (RUN and CYCLE modes), `START`, `PAUSE`, `RESUME`, `STOP`, `RESET`. None wired into an actual command dispatcher yet.
+- **`CMD_*` bodies:** defined in `protocol.h`/`lib/messages`, slice by slice as PC-app work needs them (decisions.md 2026-11-13/16). Done (0.7): `SELECT_PROFILE`, `HOME`, `JOG`, `TARE`, `PRELOAD`, `ARM` (RUN and CYCLE modes), `START`, `PAUSE`, `RESUME`, `STOP`, `RESET`. Wired (2026-11-16): `lib/dispatcher` enforces every NACK contract, `src/core/comms.cpp` carries the link. Force fails closed until the HX711 driver exists: every force-dependent command NACKs `BAD_STATE`.
+- **Jog deadman (0.7):** JOG START only on a real press (a START while already in JOG is `BAD_STATE`); while held the PC sends JOG `KEEPALIVE` (action 2) about every 100 ms. KEEPALIVE only refreshes a running jog in the same direction, never starts motion. No KEEPALIVE within `limits::JOG_KEEPALIVE_TIMEOUT_US` (~250 ms, TODO(verify)) -> the firmware stops the jog and emits `JOG_DEADMAN`.
 - Heartbeat: PC every 100 ms; loss > 1 s while moving -> FAULT. Firmware sends its own with state, lock owner, inhibit mask, fault flags.
 - **Test config sections:** core section (always) + optional `continuity` and `routing` sections, each with its own section ID and length. Unknown or unsupported section -> NACK. Missing optional section -> module idle for that test.
 - Streams: core TELEMETRY at 80 Hz (timestamp, steps, force raw, mN, filtered mN, state, flags); EVENT frames; module streams (e.g. continuity batches 20 samples x 4 channels, 100 frames/s). PC ignores stream IDs it does not know.
@@ -397,11 +400,13 @@ firmware/
                                         # entirely in lib/ instead (see lib/'s README)
   lib/          crc16/  cobs/  frame/  messages/  break_detect/  state_machine/  homing/
                 motion_guard/  core_safety/  sim_continuity/  continuity_logic/  motion_profile/
+                dispatcher/  self_test/
                 cycle_sequencer/  slip_check/  config_sections/
   test/         test_crc16/  test_cobs/  test_frame/  test_messages/  test_break_detect/
                 test_state_machine/  test_homing/  test_motion_guard/  test_core_safety/
                 test_sim_continuity/  test_motion_profile/  test_cycle_sequencer/
                 test_continuity/  test_slip/  test_config_sections/
+                test_dispatcher/  test_self_test/
 ```
 
 
@@ -415,7 +420,7 @@ Phase 1 bench bring-up (each step passes before the next):
 1. Logic only, no driver power: pins, panel, limits and e-stop (with RC), watchdog, protocol, HELLO capability = core only.
 2. Reset safety: driver powered, motor disconnected. Hold the Teensy in reset, then unplug it: driver stays disabled, no STEP edges. Confirm ENA polarity on the TB6600. **Known gap (2026-10-26): no pull-down exists on ENA yet, so this test is expected to fail / show undefined behaviour until a pull-down is physically added. Do not proceed past this step until it passes.**
 3. Driver timing at the opto output side (scope across the TB6600 opto): pulse and off-time clean at 20 kHz with the 5 us pulse, DIR setup >= 5 us. Identify the opto part. Only then consider raising the cap or shortening the pulse.
-4. Motor, no specimen, low current: direction, steps/mm against a dial gauge, homing and force guard, limits; watch limit and e-stop inputs for noise with the motor running.
+4. Motor, no specimen, low current. **Hard gate first (2026-11-16):** verify the DIR pin level -> physical direction mapping, and which physical switch is LIM_NEAR vs LIM_FAR (each reading HIGH when open). No relieving jog, homing or other motion is trusted until both are confirmed: the relieving-jog direction rule and the homing sequence both assume them. Then: steps/mm against a dial gauge, homing and force guard, limits; watch limit and e-stop inputs for noise with the motor running.
 5. HX711 noise floor on its own LDO, hanging-mass calibration, polarity, timestamp jitter.
 6. SD and OLED under load: loop worst case < 2 ms.
 7. sim_continuity build: injected conductor events classify correctly; inhibit and lock seams work.
@@ -448,7 +453,7 @@ Stall and coupler tests only on the 500 kg profile with a steel dummy.
 - Continuity-module PROVISIONAL pins (phase 2, section 2.4/2.6), MCP23017, analog switch and instrumentation amp parts, amp gain — await the phase 2 schematic (issue #17). Core panel/LED/guard pins are finalized (rev 6).
 - TB6600 board: ENA polarity, opto part and speed, DIP current table (peak or RMS), printed voltage rating.
 - Motor torque at 625 rpm (500 mm/min) and the gearbox rated output torque.
-- Proposed HX711 critical-section rule (section 3.2) awaiting approval.
+- HX711 critical-section rule (section 3.2): approved 2026-11-13, issue #2 closed.
 - Coupler slip setting for the 500 kg profile.
 - Jaw gap at home position (calibration constant).
 - Homing speeds/accel/back-off distance (`homing::Params`) are still OPEN -- no values set anywhere, caller-supplied only. Not bounds-checked against `cfg::STEP_RATE_MAX_HZ` yet either (decisions.md 2026-10-26); a misconfigured value above the cap wouldn't fail at homing start, only mid-approach.
@@ -459,4 +464,4 @@ Stall and coupler tests only on the 500 kg profile with a steel dummy.
 - Ramp acceleration for the motion planner: no moving-assembly inertia data exists yet, so no value is set anywhere; propose tuning conservatively at bench bring-up step 4 (section 13), not inventing a number now.
 - Homing fast-approach / slow-re-approach speed, and unloaded jog speed (= homing fast-approach, rev 5 decision): direction decided, mm/min value open.
 - Preload threshold force and approach speed (rev 5 decision: feature approved, values open pending HX711 noise-floor measurement).
-- `PRELOAD`'s wire path (`CMD_PRELOAD`, 0.4) is defined; wiring it into an actual command dispatcher is not yet done (decisions.md 2026-11-13).
+- `PRELOAD` (`CMD_PRELOAD`) is wired into `lib/dispatcher` (2026-11-16) but NACKs `BAD_STATE` until force reading exists (#10); its motion executor is still a stub.
