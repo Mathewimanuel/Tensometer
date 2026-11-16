@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name "tensometer")(type "KiCad")(uri "${KIPRJMOD}/tensometer.pretty")(options "")(descr "Tensometer project footprints (Teensy 4.1 socket)"))
+)

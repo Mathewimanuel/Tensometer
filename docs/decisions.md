@@ -330,4 +330,4 @@ Added as a **separate operator-triggered action**, not folded automatically into
 
 ## Proposed, awaiting approval
 
-(none currently -- HX711 critical sections, the previous entry here, was approved and closed as issue #2 on 2026-11-13; see that entry above.)
+- **Controller PCB rev 0.1 (rough), `hardware/controller-board/` (2026-11-16):** placement-only KiCad board generated from `tools/design.py`; schematic netlist verified against the design, PCB nets verified against the schematic, DRC clean apart from unrouted nets and cosmetic silk. Proposes, for Mathew's approval: (1) put the **74AHCT244 buffer back** between the Teensy and the TB6600 (3.3 V vs 5 V opto drive, 10 mA pin limit, reset back-feed), which also resolves #18 with plain 10k pulls at the buffer inputs; (2) e-stop sense via PC817, LOW = 24 V present, HIGH = e-stop/broken wire; (3) logic powered from 24 V before the contactor; (4) HX711 off-board on its own TLV75533. Details in the board README. Not yet routed or reviewed.
