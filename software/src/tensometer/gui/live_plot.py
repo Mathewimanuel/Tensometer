@@ -138,6 +138,13 @@ class LivePlotWidget(pg.PlotWidget):
     def sample_count(self) -> int:
         return len(self._samples)
 
+    def force_redraw(self) -> None:
+        """Draws immediately instead of waiting for the next throttled timer tick --
+        for Review's load-and-replot, where the data is static and should be visible the
+        moment it's loaded, not up to one timer period later."""
+        self._dirty = True
+        self._redraw()
+
     def _redraw(self) -> None:
         if not self._dirty or not self._samples:
             return

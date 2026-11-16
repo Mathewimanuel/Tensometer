@@ -24,16 +24,25 @@ software/
                     # loop:// virtual port (no real Teensy needed -- there's no command
                     # dispatcher on the firmware side yet anyway).
     cli.py         # minimal runnable entry point (`tensometer-cli <port>`): connects and
-                    # prints every decoded event. A debug console, not the real PC app --
-                    # exists so there's something to execute before the GUI is built.
+                    # prints every decoded event. A debug console, not the real PC app.
+    units.py       # mm/N/percent/mm-per-min <-> the wire's um/mN/permille/steps.
+    controller.py  # human-units app API (Controller) on top of Session/Transport -- the
+                    # one place that turns an action into wire bytes; GUI calls only this.
+    datalog.py     # per-test CSV/metadata logging and reload (TestLogger, load_*).
+    gui/           # PySide6 + pyqtgraph. live_plot.py/cycle_plot.py (plotting),
+                    # control_panel.py (state-gated buttons), dialogs.py (ARM config,
+                    # specimen metadata -- two separate dialogs, not one), review_tab.py
+                    # (load-and-replot), main_window.py (wires it all together),
+                    # app.py (`tensometer-gui` entry point). Headless-tested via
+                    # QT_QPA_PLATFORM=offscreen (tests/conftest.py), same as everything
+                    # else -- not left untested the way a GUI normally would be.
   tests/
 ```
 
-Pure logic (`wire/`, `session.py`) is deliberately built before anything hardware- or
-GUI-dependent, same order as firmware's own `lib/`-before-`src/` split. The PyQt/PySide
-GUI and the command dispatcher are not started yet (see `docs/decisions.md` for the full
-design: plotting, GUI layout, CSV/metadata schema, robustness decisions -- all written
-down before any of that code exists).
+Pure logic (`wire/`, `session.py`, `units.py`) was built before anything hardware- or
+GUI-dependent, same order as firmware's own `lib/`-before-`src/` split. See
+`docs/decisions.md` for the full design history (plotting, GUI layout, CSV/metadata
+schema, robustness decisions) and what was caught along the way.
 
 ## Running tests
 
@@ -50,6 +59,12 @@ tensometer-cli --list      # list available serial ports
 tensometer-cli COM5        # connect and print decoded events as they arrive
 ```
 
-Against real hardware this will show `Connected` the moment the Teensy sends its
+## Running the GUI
+
+```
+tensometer-gui
+```
+
+Against real hardware, either will show `Connected` the moment the Teensy sends its
 `HELLO`, but nothing beyond that yet -- `main.cpp` has no command dispatcher, so any
 `CMD_*` sent from here won't get an ACK/NACK back until that's built.

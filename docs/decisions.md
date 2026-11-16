@@ -4,6 +4,28 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: GUI completed -- control panel, dialogs, main window, Review tab; three more real bugs caught
+Finishes the "build it all" push (Mathew, same date). On top of the plot widgets (previous entry):
+
+- **`control_panel.py`**: buttons gated by the actual state-machine guards (e.g. `ARM` only from IDLE, `START` only from READY), not always-on. Emits Qt signals, never calls `Controller` directly, so it's testable standalone.
+- **`dialogs.py`**: `MetadataDialog` and `ArmConfigDialog`, kept separate per the GUI-layout entry. `ArmConfigDialog`'s cycle-mode fields (floor/peak strain, count) are disabled until "CYCLE mode" is checked, mirroring `ArmBody`'s own "always on the wire, only validated when `cycle_mode == 1`" contract.
+- **`review_tab.py`**: `File > Open` loads a saved test's three files back into its own `LivePlotWidget` instance (reusing the exact same rendering code as Live, not a separate implementation) by reconstructing synthetic `TelemetryBody`/`EventBody` instances from the loaded rows.
+- **`main_window.py`**: top bar (port/connect, `HELLO` readout, color-coded state banner), `ControlPanel`, `Live`/`Review` tabs, the `LivePlotWidget`/`CyclePlotWidget` swap keyed on `cycle_index` going nonzero, NACK/timeout surfaced via the status bar, heartbeat-loss shown distinctly from disconnect (banner text, not just a log line).
+- **`app.py`**: `tensometer-gui` entry point.
+
+**Threading-to-Qt marshaling**: `Controller`'s `on_event` fires from `Transport`'s background thread (that file's own docstring already warned of this). `MainWindow` never touches a widget from there -- the callback only does `self._event_signal.emit`, a Qt signal; Qt auto-marshals that to the GUI thread via a queued connection since emitter and receiver live in different threads. All actual widget mutation happens in `_on_event()`, which only ever runs on the GUI thread. Got this right the first time by writing the pattern out before coding, not by debugging a crash after.
+
+**Three more real bugs caught while building, before they shipped** (on top of the `CMD_STOP` pending-command bug, previous entry):
+1. Re-arming without disconnecting first would silently leak the previous test's open `TestLogger` file handles -- `_on_arm_requested` now closes any existing logger before opening a new one.
+2. Closing the window mid-test left the background reader thread running and the log files never flushed -- added a `closeEvent` override that disconnects and closes the logger.
+3. `ReviewTab.load_test` had no error handling: a missing sibling CSV, a malformed row, or a `CoreState`/`EventType` name from a different protocol version would have crashed the Review tab instead of showing a message -- `_on_open_clicked` now catches `(OSError, KeyError, ValueError, TypeError)` and shows `QMessageBox.critical`, while `load_test` itself keeps raising so there's something for that boundary to catch (and so tests can assert failure precisely).
+
+Also made `_on_arm_requested`'s output directory (`self.output_dir`, was a hardcoded `Path("tests_out")`) a settable attribute -- partly for a future settings UI, but immediately because without it, testing the ARM flow at all would have written real files into wherever pytest's cwd happens to be.
+
+127 tests total (was 96; `tests/test_control_panel.py`, `test_dialogs.py`, `test_review_tab.py`, `test_main_window.py` added), ruff clean. Smoke-tested the full app headlessly (construct, show, close) outside pytest too, not just via the test suite.
+
+**"Build it all" is now done**, modulo what was explicitly deferred rather than forgotten: SD-backup import (waits on firmware's own SD logging being wired up -- robustness-gaps entry, above) and anything needing real hardware to actually exercise (no command dispatcher exists in `main.cpp` yet, so none of this has ever talked to a real Teensy).
+
 ### `software/`: GUI started -- PySide6 + pyqtgraph, headless-tested; one real bug caught and fixed
 Chose PySide6 (previous entry noted this). Added `gui`/`dev` optional-dependency groups (`PySide6`, `pyqtgraph`, `pytest-qt`). Confirmed `QT_QPA_PLATFORM=offscreen` lets Qt widgets be constructed and exercised with no real display -- `tests/conftest.py` sets it before any PySide6 import, so the whole GUI can be tested in CI the same as everything else, not left untested the way a GUI normally would be.
 
