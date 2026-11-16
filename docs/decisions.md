@@ -2,7 +2,18 @@
 
 Newest first. Each entry: date, decision, reason, status. Anything marked PROPOSED is not approved; ask Mathew before acting on it. Covers both `firmware/` and `software/` (renamed from "Firmware decisions log" 2026-11-13 once the PC app got its own directory below).
 
-## 2026-11-13
+## 2026-11-16
+
+### `protocol.h` 0.5 + `lib/cycle_sequencer`: `ARM`'s `CYCLE` mode, slice 3 of 3
+Closes the 3-slice plan (decisions.md 2026-11-13). Three pieces:
+
+1. **`lib/cycle_sequencer`** (pure logic, no Arduino dependency, native tests): mirrors `lib/homing`'s shape (`phase()`/`done()`/`start()`/`abort()`/`tick()`) but reciprocates between two absolute step targets instead of homing to a limit switch. One cycle = extend from the floor to the peak, then retract back to the floor (Mathew: "a stretch and back to start position") -- the very first move from wherever `CYCLE` was entered (L0) out to the floor is its own `TO_FLOOR` phase and does not count as a cycle. `tick()` checks "reached" with `>=`/`<=` against the absolute target, not `==`, so a one-step overshoot from the motion planner's own deceleration rounding still advances the phase instead of stalling -- same robustness reasoning as `homing::Sequencer::BACK_OFF`'s own distance check.
+2. **`ArmBody` grows to 26 bytes** (0.5): `cycle_strain_min_permille`/`cycle_strain_max_permille`/`cycle_count` appended, always present on the wire but only validated/used when `cycle_mode == 1`. `cycle_strain_min_permille == 0` is a fully valid, normal setting (the floor is L0 itself), not a special case -- confirmed with Mathew. `cycle_strain_max_permille` gets two independent NACK checks: against `strain_limit_permille` (a real gap caught before implementation -- the general strain limit stays an independent safety backstop above the intended cycling peak, not just equal to it) and against `max_travel_um` (the peak strain's implied travel, `l0_um * cycle_strain_max_permille / 1000` computed in 64-bit to avoid overflow, must not exceed the same backstop a RUN test's travel is already implicitly bounded by).
+3. **`TelemetryBody` appends `cycle_index: u32`** (0 when not cycling) -- the PC's only progress signal for a fatigue test that may run for hours, without which a cycling test is a black box until it finishes or faults.
+
+`PROTOCOL_VERSION` 0.4 -> 0.5. 165 native tests (was 153; `lib/cycle_sequencer` added 11, `lib/messages`/`test_messages` gained 2 more). cppcheck clean, both Teensy builds succeed.
+
+Still real, not yet fixed, same accepted-gap pattern as slices 1/2: none of this is wired into a dispatcher or `main.cpp` yet (no code calls `cycle::Sequencer` or the new `ArmBody`/`TelemetryBody` fields outside tests). The forward-looking dispatcher note from slice 2 (`PreloadBody.threshold_mN` must validate against the profile active at `PRELOAD_START` time, not whenever `CMD_SELECT_PROFILE` was last sent) applies equally here to `cycle_strain_max_permille`'s cutoff-adjacent checks.
 
 ### `protocol.h` 0.4: `CMD_PRELOAD`, slice 2 of 3
 `PreloadBody{threshold_mN: u32, approach_mm_per_min: u16}`, ID `0x2A`. Same `homed_and_valid`/IDLE-READY guard as JOG/TARE (skill rev 5). Reuses `cfg::JOG_LOADED_MAX_MM_PER_MIN` (10 mm/min) as the approach-speed cap rather than a dedicated constant -- confirmed with Mathew: preload approach is the same kind of slow, loaded creep as a loaded jog, so one bench-tuned constant covers both rather than two that could drift apart. `threshold_mN` and `approach_mm_per_min` are genuinely PC-tunable per test (not fixed firmware constants like homing's force guard), specifically so knit fabric, ABS and neoprene can each get an appropriate preload force without a firmware rebuild -- the PC app's GUI is expected to offer a few preset buttons for common materials, but that's a software-layer convenience, not a protocol concern.

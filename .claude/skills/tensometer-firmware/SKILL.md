@@ -354,7 +354,7 @@ Hard stops (section 4) always win.
 - `PROTOCOL_VERSION` = major.minor. Major bump = breaking core change. Adding a module or module messages = minor bump only. Old PC software must still run core tests against newer firmware.
 - HELLO carries version, firmware build, capability bitmask, cell profile, Teensy clock.
 - Every command gets ACK or NACK (error code) echoing `seq`.
-- **`CMD_*` bodies:** defined in `protocol.h`/`lib/messages`, slice by slice as PC-app work needs them (decisions.md 2026-11-13). Done (0.4): `SELECT_PROFILE`, `HOME`, `JOG`, `TARE`, `PRELOAD`, `ARM` (RUN mode only), `START`, `PAUSE`, `RESUME`, `STOP`, `RESET`. Still DRAFT: `ARM`'s `CYCLE` mode (slice 3).
+- **`CMD_*` bodies:** defined in `protocol.h`/`lib/messages`, slice by slice as PC-app work needs them (decisions.md 2026-11-13/16). Done (0.5): `SELECT_PROFILE`, `HOME`, `JOG`, `TARE`, `PRELOAD`, `ARM` (RUN and CYCLE modes), `START`, `PAUSE`, `RESUME`, `STOP`, `RESET`. None wired into an actual command dispatcher yet.
 - Heartbeat: PC every 100 ms; loss > 1 s while moving -> FAULT. Firmware sends its own with state, lock owner, inhibit mask, fault flags.
 - **Test config sections:** core section (always) + optional `continuity` and `routing` sections, each with its own section ID and length. Unknown or unsupported section -> NACK. Missing optional section -> module idle for that test.
 - Streams: core TELEMETRY at 80 Hz (timestamp, steps, force raw, mN, filtered mN, state, flags); EVENT frames; module streams (e.g. continuity batches 20 samples x 4 channels, 100 frames/s). PC ignores stream IDs it does not know.
@@ -397,11 +397,11 @@ firmware/
                                         # entirely in lib/ instead (see lib/'s README)
   lib/          crc16/  cobs/  frame/  messages/  break_detect/  state_machine/  homing/
                 motion_guard/  core_safety/  sim_continuity/  continuity_logic/  motion_profile/
-                slip_check/  config_sections/
+                cycle_sequencer/  slip_check/  config_sections/
   test/         test_crc16/  test_cobs/  test_frame/  test_messages/  test_break_detect/
                 test_state_machine/  test_homing/  test_motion_guard/  test_core_safety/
-                test_sim_continuity/  test_motion_profile/  test_continuity/  test_slip/
-                test_config_sections/
+                test_sim_continuity/  test_motion_profile/  test_cycle_sequencer/
+                test_continuity/  test_slip/  test_config_sections/
 ```
 
 

@@ -187,7 +187,8 @@ Result encode_telemetry(const proto::TelemetryBody& body, uint8_t* out, size_t o
     const bool ok = w.put_u64(body.timestamp_us) && w.put_i32(body.position_steps) &&
                     w.put_i32(body.force_raw_counts) && w.put_i32(body.force_raw_mN) &&
                     w.put_i32(body.force_filtered_mN) &&
-                    w.put_u8(static_cast<uint8_t>(body.state)) && w.put_u8(body.flags);
+                    w.put_u8(static_cast<uint8_t>(body.state)) && w.put_u8(body.flags) &&
+                    w.put_u32(body.cycle_index);
     if (!ok) return Result::NO_SPACE;
     *out_len = w.len();
     return Result::OK;
@@ -201,7 +202,7 @@ Result decode_telemetry(const uint8_t* in, size_t in_len, proto::TelemetryBody* 
     const bool ok = r.get_u64(&out->timestamp_us) && r.get_i32(&out->position_steps) &&
                     r.get_i32(&out->force_raw_counts) && r.get_i32(&out->force_raw_mN) &&
                     r.get_i32(&out->force_filtered_mN) && r.get_u8(&state) &&
-                    r.get_u8(&out->flags);
+                    r.get_u8(&out->flags) && r.get_u32(&out->cycle_index);
     if (!ok) return Result::TOO_SHORT;
     out->state = static_cast<mod::CoreState>(state);
     return Result::OK;
@@ -276,7 +277,8 @@ Result encode_arm(const proto::ArmBody& body, uint8_t* out, size_t out_cap, size
     const bool ok = w.put_u32(body.l0_um) && w.put_u16(body.speed_mm_per_min) &&
                     w.put_u32(body.force_limit_mN) && w.put_u32(body.max_travel_um) &&
                     w.put_u16(body.strain_limit_permille) && w.put_u8(body.cycle_mode) &&
-                    w.put_u8(body.reserved);
+                    w.put_u8(body.reserved) && w.put_u16(body.cycle_strain_min_permille) &&
+                    w.put_u16(body.cycle_strain_max_permille) && w.put_u32(body.cycle_count);
     if (!ok) return Result::NO_SPACE;
     *out_len = w.len();
     return Result::OK;
@@ -289,7 +291,8 @@ Result decode_arm(const uint8_t* in, size_t in_len, proto::ArmBody* out) {
     const bool ok = r.get_u32(&out->l0_um) && r.get_u16(&out->speed_mm_per_min) &&
                     r.get_u32(&out->force_limit_mN) && r.get_u32(&out->max_travel_um) &&
                     r.get_u16(&out->strain_limit_permille) && r.get_u8(&out->cycle_mode) &&
-                    r.get_u8(&out->reserved);
+                    r.get_u8(&out->reserved) && r.get_u16(&out->cycle_strain_min_permille) &&
+                    r.get_u16(&out->cycle_strain_max_permille) && r.get_u32(&out->cycle_count);
     if (!ok) return Result::TOO_SHORT;
     return Result::OK;
 }

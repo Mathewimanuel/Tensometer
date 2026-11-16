@@ -81,8 +81,9 @@ static void test_heartbeat_status_round_trip() {
 
 static void test_telemetry_round_trip() {
     proto::TelemetryBody in{123456789012345ull, -1000, 8388608, -980000, -975500,
-                             mod::CoreState::RUN,
-                             static_cast<uint8_t>(proto::TELEM_POSITION_VALID | proto::TELEM_HOMED)};
+                             mod::CoreState::CYCLE,
+                             static_cast<uint8_t>(proto::TELEM_POSITION_VALID | proto::TELEM_HOMED),
+                             4821};
     uint8_t buf[proto::TELEMETRY_WIRE_LEN];
     size_t len = 0;
     TEST_ASSERT_EQUAL_INT(
@@ -100,6 +101,7 @@ static void test_telemetry_round_trip() {
     TEST_ASSERT_EQUAL_INT32(in.force_filtered_mN, out.force_filtered_mN);
     TEST_ASSERT_TRUE(in.state == out.state);
     TEST_ASSERT_EQUAL_UINT8(in.flags, out.flags);
+    TEST_ASSERT_EQUAL_UINT32(in.cycle_index, out.cycle_index);
 }
 
 static void test_event_round_trip() {
@@ -228,7 +230,8 @@ static void test_jog_stop_round_trip() {
 }
 
 static void test_arm_round_trip() {
-    proto::ArmBody in{50000, 200, 880000, 20000, 500, 0, 0};
+    // RUN mode: cycle_mode and the cycle_* fields are all zero/ignored.
+    proto::ArmBody in{50000, 200, 880000, 20000, 500, 0, 0, 0, 0, 0};
     uint8_t buf[proto::ARM_WIRE_LEN];
     size_t len = 0;
     TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
@@ -245,10 +248,30 @@ static void test_arm_round_trip() {
     TEST_ASSERT_EQUAL_UINT16(in.strain_limit_permille, out.strain_limit_permille);
     TEST_ASSERT_EQUAL_UINT8(in.cycle_mode, out.cycle_mode);
     TEST_ASSERT_EQUAL_UINT8(in.reserved, out.reserved);
+    TEST_ASSERT_EQUAL_UINT16(0, out.cycle_strain_min_permille);
+    TEST_ASSERT_EQUAL_UINT16(0, out.cycle_strain_max_permille);
+    TEST_ASSERT_EQUAL_UINT32(0, out.cycle_count);
+}
+
+static void test_arm_cycle_mode_round_trip() {
+    proto::ArmBody in{50000, 100, 880000, 30000, 1000, 1, 0, 50, 600, 10000};
+    uint8_t buf[proto::ARM_WIRE_LEN];
+    size_t len = 0;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::encode_arm(in, buf, sizeof(buf), &len)));
+    TEST_ASSERT_EQUAL_UINT32(proto::ARM_WIRE_LEN, len);
+
+    proto::ArmBody out{};
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::OK),
+                           static_cast<int>(messages::decode_arm(buf, len, &out)));
+    TEST_ASSERT_EQUAL_UINT8(1, out.cycle_mode);
+    TEST_ASSERT_EQUAL_UINT16(in.cycle_strain_min_permille, out.cycle_strain_min_permille);
+    TEST_ASSERT_EQUAL_UINT16(in.cycle_strain_max_permille, out.cycle_strain_max_permille);
+    TEST_ASSERT_EQUAL_UINT32(in.cycle_count, out.cycle_count);
 }
 
 static void test_arm_decode_rejects_truncated_buffer() {
-    proto::ArmBody in{1, 2, 3, 4, 5, 0, 0};
+    proto::ArmBody in{1, 2, 3, 4, 5, 0, 0, 0, 0, 0};
     uint8_t buf[proto::ARM_WIRE_LEN];
     size_t len = 0;
     messages::encode_arm(in, buf, sizeof(buf), &len);
@@ -302,6 +325,7 @@ int main() {
     RUN_TEST(test_jog_round_trip);
     RUN_TEST(test_jog_stop_round_trip);
     RUN_TEST(test_arm_round_trip);
+    RUN_TEST(test_arm_cycle_mode_round_trip);
     RUN_TEST(test_arm_decode_rejects_truncated_buffer);
     RUN_TEST(test_preload_round_trip);
     RUN_TEST(test_preload_decode_rejects_truncated_buffer);

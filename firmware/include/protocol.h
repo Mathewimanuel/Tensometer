@@ -1,9 +1,10 @@
 // Wire protocol shared with the PC app (skill section 8). Core message bodies (HELLO,
 // ACK/NACK, HEARTBEAT, TELEMETRY, EVENT) are defined below (0.2). CMD_* bodies, slice 1
 // of 3 (0.3, docs/decisions.md): SELECT_PROFILE, HOME, JOG, TARE, ARM (RUN mode only),
-// START, PAUSE, RESUME, STOP, RESET. Slice 2 (0.4): PRELOAD. Still DRAFT: ARM's CYCLE
-// mode + its config fields (slice 3). Any change here must be mirrored on the Python
-// side and bump PROTOCOL_VERSION (minor for additive, major for breaking).
+// START, PAUSE, RESUME, STOP, RESET. Slice 2 (0.4): PRELOAD. Slice 3 (0.5): ARM's CYCLE
+// mode + its extra config fields, plus TelemetryBody.cycle_index. Any change here must be
+// mirrored on the Python side and bump PROTOCOL_VERSION (minor for additive, major for
+// breaking).
 //
 // Struct layout here is for working with a message in code; it is NOT the wire layout
 // (no guarantee against compiler padding). The wire layout is always little-endian,
@@ -20,7 +21,7 @@
 namespace proto {
 
 constexpr uint8_t VERSION_MAJOR = 0;
-constexpr uint8_t VERSION_MINOR = 4;
+constexpr uint8_t VERSION_MINOR = 5;
 
 // Frame payload (before COBS): msg_id u8 | seq u8 | body | crc16 u16 (little-endian).
 constexpr uint16_t MAX_BODY_LEN = 240;
@@ -171,8 +172,13 @@ struct TelemetryBody {
     int32_t force_filtered_mN;   // calibrated, filtered path (section 6)
     mod::CoreState state;
     uint8_t flags;  // TELEM_* bits
+    // Appended 0.5 (slice 3 of 3 -- docs/decisions.md), not inserted, same convention as
+    // mod::CoreState/mod::ConductorEvent/EventType::OPERATOR_STOP: full cycles completed
+    // so far (cycle::Sequencer::cycles_completed()), 0 when not in CYCLE mode. The PC's
+    // only progress signal for a fatigue test that may run for hours.
+    uint32_t cycle_index;
 };
-constexpr size_t TELEMETRY_WIRE_LEN = 8 + 4 + 4 + 4 + 4 + 1 + 1;  // 26
+constexpr size_t TELEMETRY_WIRE_LEN = 8 + 4 + 4 + 4 + 4 + 1 + 1 + 4;  // 30
 
 // Generic event frame. `aux` meaning depends on `type` (e.g. a conductor channel index
 // for CONDUCTOR_*, an Err code for FAULT) -- documented at each call site that fills it,
@@ -229,8 +235,9 @@ constexpr size_t JOG_WIRE_LEN = 1 + 1;  // 2
 // re-evaluated every tick -- entirely firmware-internal (skill 3.4/decisions.md 2026-10-15).
 
 // ARM's core config section (skill 8: "core section (always) + optional continuity and
-// routing sections"). cycle_mode must be 0 (RUN) until CYCLE support lands in slice 3 --
-// NACK Err::OUT_OF_RANGE on any other value for now.
+// routing sections"). cycle_mode selects RUN (0) or CYCLE (1, 0.5) -- the cycle_* fields
+// below are always present on the wire but only validated/used when cycle_mode == 1,
+// simpler than a variable-length optional block for one case.
 struct ArmBody {
     uint32_t l0_um;                 // gauge length from home; FW moves here before ARM
                                       // completes (arming(), skill 3.4/decisions.md 2026-10-26).
@@ -240,12 +247,29 @@ struct ArmBody {
                                         // cfg::SPEED_MAX_MM_PER_MIN
     uint32_t force_limit_mN;          // 0 = disabled (profile cutoff only); else must be
                                         // <= the active profile's cutoff_mN
-    uint32_t max_travel_um;           // soft travel ceiling from L0; required > 0
+    uint32_t max_travel_um;           // soft travel ceiling from L0; required > 0. Also
+                                        // the backstop for cycle_strain_max_permille below
+                                        // (see that field's comment) -- not just the RUN
+                                        // strain_limit_permille.
     uint16_t strain_limit_permille;   // 0 = disabled
-    uint8_t cycle_mode;                 // 0 = RUN (only supported value until slice 3)
+    uint8_t cycle_mode;                 // 0 = RUN, 1 = CYCLE (0.5)
     uint8_t reserved;                   // must be 0; reject nonzero once a use is assigned
+    // ---- 0.5 (slice 3 of 3 -- docs/decisions.md): ignored when cycle_mode == 0 ----
+    uint16_t cycle_strain_min_permille;  // floor bound each cycle returns to; 0 = L0 itself
+                                           // (a fully valid, normal setting, not special-
+                                           // cased). NACK OUT_OF_RANGE if >=
+                                           // cycle_strain_max_permille.
+    uint16_t cycle_strain_max_permille;  // peak bound each cycle. NACK OUT_OF_RANGE if it
+                                           // exceeds strain_limit_permille (when nonzero --
+                                           // that general limit stays an independent safety
+                                           // backstop above the intended cycling peak, not
+                                           // just equal to it), OR if the travel it implies
+                                           // (l0_um * cycle_strain_max_permille / 1000,
+                                           // computed in 64-bit to avoid overflow) exceeds
+                                           // max_travel_um.
+    uint32_t cycle_count;                 // total repetitions; NACK OUT_OF_RANGE if 0
 };
-constexpr size_t ARM_WIRE_LEN = 4 + 2 + 4 + 4 + 2 + 1 + 1;  // 18
+constexpr size_t ARM_WIRE_LEN = 4 + 2 + 4 + 4 + 2 + 1 + 1 + 2 + 2 + 4;  // 26
 
 // PRELOAD (0.4, slice 2 of 3 -- docs/decisions.md). Same homed_and_valid/IDLE-READY
 // guard as JOG/TARE (skill rev 5: "same precondition as JOG/TARE"); reuses the
