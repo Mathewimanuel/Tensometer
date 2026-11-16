@@ -4,10 +4,8 @@ prove the read/write/threading plumbing works, not that firmware actually respon
 correctly to anything (session.py's own tests already cover the protocol logic itself).
 """
 
-import threading
-import time
-
 import serial
+from helpers import EventCollector
 
 from tensometer import session as sess
 from tensometer import transport as tp
@@ -16,34 +14,8 @@ from tensometer.wire import messages
 from tensometer.wire import protocol as proto
 
 
-class _EventCollector:
-    """Collects events from the background thread and lets a test wait for a specific
-    one instead of sleeping an arbitrary guessed duration."""
-
-    def __init__(self):
-        self.events: list[sess.SessionEvent] = []
-        self._lock = threading.Lock()
-        self._got = threading.Event()
-
-    def __call__(self, event: sess.SessionEvent) -> None:
-        with self._lock:
-            self.events.append(event)
-        self._got.set()
-
-    def wait_for(self, predicate, timeout: float = 2.0):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            with self._lock:
-                match = next((e for e in self.events if predicate(e)), None)
-            if match is not None:
-                return match
-            self._got.wait(timeout=0.05)
-            self._got.clear()
-        raise AssertionError(f"timed out waiting for an event matching {predicate}")
-
-
 def test_send_command_round_trips_through_loopback():
-    collector = _EventCollector()
+    collector = EventCollector()
     t = tp.Transport("loop://", on_event=collector)
     t.start()
     try:
@@ -64,7 +36,7 @@ def test_injected_hello_bytes_produce_connected_event():
     # A pre-opened loop:// instance, shared with the test, so bytes written here are
     # read by the Transport's own background thread -- simulating "firmware sent this".
     fake_port = serial.serial_for_url("loop://", timeout=0.05)
-    collector = _EventCollector()
+    collector = EventCollector()
     t = tp.Transport(fake_port, on_event=collector)
     t.start()
     try:

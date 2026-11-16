@@ -4,6 +4,17 @@ Newest first. Each entry: date, decision, reason, status. Anything marked PROPOS
 
 ## 2026-11-16
 
+### `software/`: `units.py` + `controller.py` (human-units app API)
+Mathew asked to keep building through the rest of the design in one push ("build it all"). Chose PySide6 over PyQt6 for the upcoming GUI (LGPL, no distribution-license concern) -- first real fork left from the earlier design rounds. Built next, in order:
+
+**`units.py`**: mm/N/%/mm-per-min <-> the wire units (um/mN/permille/steps) `protocol.py`'s bodies actually use. `STEPS_PER_MM = 2000` is hand-mirrored from `cfg::STEPS_PER_MM` (`firmware/include/config.h`) -- same duplication-by-hand discipline as the protocol mirror itself, flagged the same way.
+
+**`controller.py`**: the one place that turns a human-units action ("arm this test", "jog toward LIM_NEAR") into the right wire bytes, sitting on top of `Transport`/`Session`. Not a firmware-style "dispatcher" (nothing like that exists on the firmware side yet) -- this is the PC-side equivalent, and a GUI should call only this, never `transport`/`session`/`wire` directly. Tracks `CoreState`/`lock_owner`/`inhibit_mask`/`fault_cause`/latest telemetry by watching its own forwarded events, so a GUI doesn't have to duplicate that bookkeeping. Added `NotConnectedError` as a defense-in-depth guard (every action checks `connected` first) even though the real gate is meant to be the GUI disabling buttons per state -- cheap insurance for CLI/scripted use where nothing enforces that.
+
+One naming collision caught before it shipped: `Controller.start()`/`stop()` needed to mean `CMD_START`/`CMD_STOP` (matching the GUI's own "Start"/"Stop" button labels), which collided with the natural names for opening/closing the serial connection. Resolved by calling the connection lifecycle `connect()`/`disconnect()` instead, keeping `start()`/`stop()` for the wire commands.
+
+12 new tests (`test_units.py`, `test_controller.py`) against `pyserial`'s `loop://`, reusing a small shared `tests/helpers.py` (factored out of `test_transport.py`, which had its own copy). 72 tests total, ruff clean.
+
 ### `software/`: `transport.py` (thin pyserial driver) + `cli.py` (first runnable entry point)
 Wires `Session` (previous entry) to a real `pyserial` port on a background thread -- the hardware-adjacent thin-driver layer, same split as firmware's `src/` vs `lib/`. `cli.py` is a minimal debug console (`tensometer-cli <port>`), not the real PC app: it exists so there's something to actually execute before the GUI is built, since the earlier wire/session work produced a tested library with no entry point at all.
 
