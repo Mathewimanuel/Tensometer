@@ -6,3 +6,7 @@
 
 # Everything else: let Git normalise.
 * text=auto
+# CAD: binary STL, large machine-generated STEP
+*.stl binary
+*.step -diff linguist-generated
+*.png binary
