@@ -2,6 +2,11 @@
 
 Newest first. Each entry: date, decision, reason, status. Anything marked PROPOSED is not approved; ask Mathew before acting on it. Covers both `firmware/` and `software/` (renamed from "Firmware decisions log" 2026-11-13 once the PC app got its own directory below).
 
+## 2026-11-19
+
+### Limit-switch mounts added to the v3e CAD (`cad/limit_switch_mount/`)
+The v3e frame had no limit-switch mounts (all 24 assembly solids checked). Added one bracket design, printed twice. It bolts to the 4040 -Y side slot (2x M6 T-nut, z = -20, slotted ±5 mm in X) and holds a roller-lever microswitch under the overhang of the moving parts, so the roller rides onto the underside of the striker and overtravel never hits the switch body. LIM_NEAR trips on the clamp block at a jaw gap of about 77 mm (3 mm past G0). LIM_FAR (homing) trips on the nut plate at 320 mm of travel, 14.8 mm before carriage 2 reaches the rail end, which closes CAD README open item 1. Collision-checked across the full travel. Switch dimensions are KW12-3 placeholders (TODO(verify): measure the real switch); the roller interference (1.3 mm) must be checked against the switch's pre-travel and overtravel. **PROPOSED**: trip points, bracket position and the 320 mm usable stroke all need Mathew's OK.
+
 ## 2026-11-16
 
 ### `software/`: four audit fixes (reader thread, log overwrite, ARM-before-logger, wrong L0)
