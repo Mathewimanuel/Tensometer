@@ -11,12 +11,18 @@ bracket design, printed twice, for a roller-lever microswitch (KW12 / V-156 clas
 - The bracket bolts to the **-Y side slot** of the 4040 with 2x M6 + side-slot T-nuts at
   z = -20, same as the other blocks. The slots are 10 mm long, giving ±5 mm along X.
 - The switch hangs outside the extrusion, under the **76 mm-wide overhang** of the moving
-  parts. The bottom edge of the clamp block or nut plate (z = 28) rolls onto the roller, and
+  parts. The bottom edge of the clamp block or nut plate rolls onto the roller, and
   the roller then rides on the flat underside. Overtravel never drives anything into the
   switch body: 82 mm and 59 mm of underside are available, against at most 48 mm and
   14.8 mm of travel past the trip points.
-- The M3 switch holes are slotted 6 mm vertically (±3 mm), so the roller height can be set
-  at install.
+- The M3 switch holes are slotted 10 mm vertically (±5 mm), so the roller height can be set
+  at install. The M3 nuts sit in hex tracks on the back face (open at the top edge to slide
+  them in), because the slots reach below the top of the extrusion, where a loose nut has no room.
+- **Strike height:** designed for the underside **25 mm above the extrusion top**, read from
+  Mathew's ruler photo (2026-11-19). The block's chamfered end lip reads about 21 mm. Both
+  readings are ±2 mm because of parallax. The v3e CAD has 28 mm, from its provisional carriage height,
+  so the renders show the roller about 3 mm short of the CAD block. The ±5 mm slots cover
+  21 to 29 mm. TODO(verify): measure with calipers.
 
 | Switch | Struck by | Trip point | Margin to hard stop |
 |---|---|---|---|
@@ -28,6 +34,7 @@ of the BK10 block (x = 655).
 
 ![LIM_NEAR](images/lim_near_closeup.png)
 ![LIM_FAR at the trip point](images/lim_far_closeup_at_trip.png)
+![bracket back face, M3 nut tracks](images/bracket_back_nut_tracks.png)
 
 ## Checked
 
@@ -55,6 +62,6 @@ at and beyond the trip point. That is the lever being pressed, as intended.
 
 - `build.py`: parametric source (build123d 0.13). Regenerates everything below.
 - `lim_near_bracket.step/.stl`, `lim_far_bracket.step/.stl`: identical part, each at its
-  assembly position. Print 2 in PETG, 6 mm plate.
+  assembly position. Print 2 in PETG, 6 mm plate, back face down (nut tracks need no supports).
 - `lim_*_switch_placeholder.step`: placeholder switch body + lever, for clearance checks only.
 - `images/`: renders.

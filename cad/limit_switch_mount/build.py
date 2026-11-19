@@ -36,17 +36,22 @@ ROLLER_FREE_Z = 11.0                       # roller centre above the body top, l
 # ---------------------------------------------------------------- frame interface
 EXTR_Y = -20.0          # -Y side face of the 4040
 SLOT_Z = -20.0          # side slot centre (same as the other blocks' M6 side holes)
-STRIKE_Z = 28.0         # underside of the clamp block / nut plate
+STRIKE_Z = 25.0         # underside of the moving block above the extrusion top.
+                        # Read from Mathew's ruler photo 2026-11-19 (about 25 mm at the main
+                        # underside, about 21 mm at the chamfered end lip; +/-2 mm parallax).
+                        # The v3e CAD has 28 (provisional carriage height).
+                        # TODO(verify): measure extrusion top -> block underside with calipers
 INTERFERENCE = 1.3      # roller top this far above STRIKE_Z with the lever free
                         # TODO(verify): must be less than the switch's pre-travel + overtravel
 
 # ---------------------------------------------------------------- bracket
 PL_T = 6.0              # plate thickness (Y)
 PL_L = 40.0             # plate length (X)
-PL_Z0, PL_Z1 = -32.0, 20.0
+PL_Z0, PL_Z1 = -32.0, 16.0   # top kept well under the ~21 mm end lip of the real block
 M6_D, M6_ADJ = 6.6, 10.0   # T-nut slots: O6.6, 10 mm long along X
+NUT_AF, NUT_DEPTH = 5.5, 2.7   # M3 hex nut across flats, track depth into the 6 mm plate
 M6_DX = 12.0               # two T-nut slots at +/-12 from the plate centre
-M3_D, M3_ADJ = 3.4, 6.0    # switch slots: O3.4, 6 mm long along Z (+/-3)
+M3_D, M3_ADJ = 3.4, 10.0   # switch slots: O3.4, 10 mm long along Z (+/-5, covers 21..29 mm strikers)
 
 body_bottom_z = STRIKE_Z + INTERFERENCE - ROLLER_R - ROLLER_FREE_Z - SW_H
 
@@ -70,6 +75,12 @@ def bracket(cx):
     z_hole = body_bottom_z + SW_HOLE_Z
     for dx in (-SW_HOLE_PITCH / 2, SW_HOLE_PITCH / 2):
         b -= _slot_y(cx + dx, z_hole, M3_ADJ + M3_D, M3_D, "z")
+        # Hex-nut track on the back face: the switch slots reach below the extrusion top, where
+        # a loose nut would have no room, so each M3 nut slides in a track (open at the top
+        # edge for insertion) that stops it turning. Through-bolt, no insert.
+        z_lo = z_hole - (M3_ADJ + NUT_AF) / 2
+        b -= Pos(cx + dx, EXTR_Y, z_lo) * Box(NUT_AF + 0.2, 2 * NUT_DEPTH, PL_Z1 - z_lo + 1,
+                                              align=(Align.CENTER, Align.CENTER, Align.MIN))
     return b
 
 
