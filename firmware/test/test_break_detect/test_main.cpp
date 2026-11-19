@@ -451,8 +451,31 @@ static void test_three_events_fire_together_on_one_sample() {
     TEST_ASSERT_TRUE(c.broken());
 }
 
+static void test_energy_sums_extending_stretches_only() {
+    // Audit 2026-11-16: the last extending sample was joined to the first one after a
+    // retraction, integrating across the whole return stroke (big negative dpos).
+    Classifier c;
+    c.start_test(false, false);
+    Params p;
+    EventLog log;
+    uint64_t t = 0;
+    int32_t pos = 0;
+
+    feed(c, log, p, t, pos, 1000);  // pos 0
+    feed(c, log, p, t, pos, 2000);  // pos 100: + (1000+2000)*100/2
+    TEST_ASSERT_EQUAL_INT64(150000, c.energy_raw());
+
+    feed(c, log, p, t, pos, 1500, /*extending=*/false);  // retracting, ignored
+    pos = 0;                                              // back at the start
+    feed(c, log, p, t, pos, 500);   // first sample of the next stretch: no trapezoid
+    TEST_ASSERT_EQUAL_INT64(150000, c.energy_raw());
+    feed(c, log, p, t, pos, 700);   // pos 100: + (500+700)*100/2
+    TEST_ASSERT_EQUAL_INT64(210000, c.energy_raw());
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_energy_sums_extending_stretches_only);
     RUN_TEST(test_steady_rise_then_sudden_break_no_conductor);
     RUN_TEST(test_thick_wire_break_small_coincident_drop_logs_conductor_open_only);
     RUN_TEST(test_thin_wire_break_large_coincident_drop_logs_both);

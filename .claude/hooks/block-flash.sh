@@ -20,11 +20,12 @@ shopt -s nocasematch
 
 # Regexes live in variables so bash passes them to the regex engine unmodified.
 SEP='[^;&|]*'                                   # stay within one shell command
-RE_UPLOAD="(pio|platformio)${SEP}(-t|--target)[[:space:]=]*(upload|uploadfs|program)"
+# The command arrives JSON-escaped, so a double quote shows up as \" -- allow the backslash too.
+RE_UPLOAD="(pio|platformio)${SEP}(-t|--target)[[:space:]=\\\\\"']*(upload|uploadfs|program)"
 RE_LOADER='(teensy_loader_cli|teensy_post_compile|teensy_reboot|teensy_restart|tycmd|tyuploader)'
 RE_TEST='(pio|platformio)[[:space:]]+test'
 RE_TEST_NATIVE="(pio|platformio)[[:space:]]+test${SEP}(-e|--environment)[[:space:]=]*native"
-RE_SERIAL='(>[[:space:]]*/dev/(tty(ACM|USB)|cu\.usbmodem)|[[:space:]]COM[0-9]+)'
+RE_SERIAL='(>[[:space:]]*/dev/(tty(ACM|USB)|cu\.usbmodem)|[^[:alnum:]]COM[0-9]+)'
 
 [[ "$input" =~ $RE_UPLOAD ]] && block "PlatformIO upload target"
 [[ "$input" =~ $RE_LOADER ]] && block "Teensy loader / reboot tool"

@@ -48,6 +48,11 @@ check 2 'C:\Users\mathew\.platformio\packages\tool-teensy\teensy_loader_cli.exe 
 check 2 'cd firmware; pio test'
 check 2 'python -m platformio run -t upload'
 check 2 'mode COM4 BAUD=115200'
+# Quoted target / port forms (audit 2026-11-16: both slipped through before)
+check 2 'pio run -e teensy41 -t "upload"'
+check 2 "pio run -e teensy41 --target 'upload'"
+check 2 "python -c \"import serial; serial.Serial('COM3')\""
+check 2 'python -c "serial.Serial(port=\"COM12\")"'
 
 # Must be allowed (exit 0)
 check 0 'pio test -e native'

@@ -185,12 +185,19 @@ uint8_t Classifier::update_slip(const ForceSample& sample, uint32_t current_idx,
 
 uint8_t Classifier::process_sample(const ForceSample& sample, bool extending,
                                     const Params& params, Event* out, uint8_t out_cap) {
-    if (!extending || broken_) return 0;
+    if (!extending || broken_) {
+        // Energy is summed over extending stretches only: joining the last extending
+        // sample to the first one after a retraction would integrate across the whole
+        // return stroke (large negative dpos) and wipe out the previous cycle.
+        have_prev_for_energy_ = false;
+        return 0;
+    }
 
     const uint32_t idx = sample_index_;
     uint8_t n = 0;
 
-    // Energy: trapezoid sum of force over position, continuous across the whole test.
+    // Energy: trapezoid sum of force over position, summed over extending stretches only
+    // (the integrator restarts after any non-extending sample, see the early return above).
     if (have_prev_for_energy_) {
         const int64_t avg2 = static_cast<int64_t>(sample.force_mN) + prev_force_mN_;
         const int64_t dpos = static_cast<int64_t>(sample.position) - prev_position_;

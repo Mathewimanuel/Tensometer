@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "motion_profile.h"
+#include "safety_limits.h"
 
 void setUp() {}
 void tearDown() {}
@@ -184,8 +185,17 @@ static void test_zero_remaining_stops_immediately_even_mid_cruise() {
     TEST_ASSERT_FALSE(planner.moving());
 }
 
+static void test_stale_dt_is_clamped_to_one_worst_case_pass() {
+    // Audit 2026-11-16: a 10 s dt after idle went 0 -> cruise in one tick, no ramp.
+    const motion::Params params{2000, 1000};  // cruise 2000 Hz, accel 1000 Hz/s
+    motion::Planner planner;
+    const uint32_t r = planner.tick(10'000'000, motion::UNBOUNDED_STEPS, params);
+    TEST_ASSERT_EQUAL_UINT32(1000 * limits::LOOP_WORST_CASE_US / 1000000, r);  // 2 Hz, not 2000
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_stale_dt_is_clamped_to_one_worst_case_pass);
     RUN_TEST(test_steps_to_stop_exact_division);
     RUN_TEST(test_steps_to_stop_rounds_up);
     RUN_TEST(test_steps_to_stop_zero_rate_is_zero);

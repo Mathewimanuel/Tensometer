@@ -14,6 +14,17 @@ IntervalTimer timer;
 volatile int32_t position_steps_ = 0;
 volatile uint32_t steps_remaining_ = 0;  // motion::UNBOUNDED_STEPS for open-ended moves
 volatile bool moving_ = false;
+// The period most recently commanded (written by the main loop) and the one the PIT is
+// actually counting right now. They differ while a long period is still running: the PIT
+// loads LDVAL only at expiry, i.e. in step_isr(), which is where running_ catches up.
+volatile uint32_t period_us_ = 0;
+volatile uint32_t running_period_us_ = 0;
+
+// Catches the -D build-flag route only; uncommenting the define inside the core's own
+// debug/printf.h is invisible here. Keep the core file stock.
+#ifdef PRINT_DEBUG_STUFF
+#error "The Teensy core's IntervalTimer::beginCycles() printf would busy-wait on Serial4 inside stepper's critical section"
+#endif
 bool enabled_ = false;  // only touched from the main loop (enable/disable/set_motion), not the ISR
 // volatile along with the others: read every step by step_isr(), written only while
 // stopped by set_motion(). The logic is race-free either way (the ISR never runs while
@@ -28,6 +39,7 @@ void step_isr() {
     digitalWriteFast(cfg::pin::STEP, HIGH);
 
     position_steps_ += (dir_ == Dir::TOWARD_LIM_FAR) ? 1 : -1;
+    running_period_us_ = period_us_;  // the PIT just reloaded LDVAL with this
 
     if (steps_remaining_ != motion::UNBOUNDED_STEPS) {
         --steps_remaining_;
@@ -50,6 +62,8 @@ void start_fresh_move(Dir dir, uint32_t period_us, uint32_t steps_remaining) {
     delayMicroseconds(cfg::DIR_SETUP_US);  // one-time per move, not per tick
     steps_remaining_ = steps_remaining;
     moving_ = true;
+    period_us_ = period_us;
+    running_period_us_ = period_us;
     timer.begin(step_isr, period_us);
     // Highest priority (skill 3.2: the step ISR must not be held off, including by its own
     // 5 us busy-wait stalling the future HX711 DOUT-edge ISR). TODO(verify) once that ISR
@@ -108,7 +122,24 @@ bool set_motion(Dir dir, uint32_t rate_hz, uint32_t steps_remaining) {
     const bool still_moving = moving_;
     if (still_moving) {
         steps_remaining_ = steps_remaining;
-        timer.update(period_us);
+        if (period_us * 2 < running_period_us_) {
+            // update() only takes effect once the period the PIT is *counting* expires.
+            // During a ramp-up from rest that period is long (the planner's first rate
+            // is a few Hz), so every move would sit still for it and then jump straight
+            // to whatever rate the planner had reached by then (audit, 2026-11-16). A
+            // restart applies the shorter period now; beginCycles() stops, reloads and
+            // restarts the same PIT channel, so no step is double-counted. Compared
+            // against the running period, not the last commanded one: a trapezoid ramp
+            // never doubles the rate in one tick, so the latter would never fire
+            // (found by firmware-reviewer). At 4000 Hz/s this restarts a handful of
+            // times, all in the first ~40 ms (below ~63 Hz, where the rate can still
+            // double within one step period); first step at ~38 ms instead of 250 ms.
+            timer.begin(step_isr, period_us);
+            running_period_us_ = period_us;
+        } else {
+            timer.update(period_us);
+        }
+        period_us_ = period_us;
     }
     interrupts();
 

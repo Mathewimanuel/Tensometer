@@ -1,5 +1,7 @@
 #include "motion_profile.h"
 
+#include "safety_limits.h"  // limits::LOOP_WORST_CASE_US
+
 namespace motion {
 
 namespace {
@@ -39,6 +41,9 @@ uint32_t steps_to_stop(uint32_t rate_hz, uint32_t accel_hz_per_s) {
 }
 
 uint32_t Planner::tick(uint32_t dt_us, uint32_t remaining_steps, const Params& params) {
+    // A stale dt (first tick after seconds of idle) must not turn into one giant
+    // rate step; a late tick ramps as if it were a worst-case loop pass.
+    if (dt_us > limits::LOOP_WORST_CASE_US) dt_us = limits::LOOP_WORST_CASE_US;
     if (remaining_steps == 0) {
         rate_hz_ = 0;
         accel_remainder_us_ = 0;
