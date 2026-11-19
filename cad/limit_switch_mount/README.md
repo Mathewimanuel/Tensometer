@@ -21,7 +21,7 @@ bracket design, printed twice, for Mathew's mini roller-lever microswitch (SS-5G
 - **Heights:**
   - Strike face: 27.89 mm above the extrusion top, measured with calipers (matches HGH15CA
     H = 28 and the CAD).
-  - Roller, lever free: 24.36 mm above the switch's terminal face. Fully pressed: 19.81 mm, so
+  - Roller, lever free: 24.36 mm above the terminal pin tips. Fully pressed: 19.81 mm, so
     4.55 mm of total travel.
   - The block presses the roller **2.5 mm**, leaving 2 mm before it bottoms out.
 - **Install:** slide the switch up until it clicks with the block over it, then about 0.5 mm
@@ -51,12 +51,12 @@ at and beyond the trip point, by the intended 2.5 mm press.
 Measured by Mathew (2026-11-19):
 - strike height 27.89 mm;
 - body length 19.81 mm and thickness 6.07 mm;
-- mounting hole O2.55;
-- roller top free 24.36 mm and fully pressed 19.81 mm.
+- mounting holes O2.55 at 10.00 mm centres;
+- roller top above the pin tips: 24.36 mm free, 19.81 mm fully pressed.
 
 Still TODO(verify):
-- **Hole centre spacing** (9.5 mm assumed, typical for this size). It is fixed geometry, so a
-  wrong value means a reprint.
+- Pin length below the body (4 mm, photo estimate). This only moves where the holes fall in
+  the ±5 mm slots, not the roller height.
 - Hole height on the body (3.0 mm assumed; the ±5 mm slots absorb it).
 - Body height (10.2 mm assumed, cosmetic) and roller size (cosmetic).
 - The switch's click point within its 4.55 mm travel. It has to come before the 2.5 mm press;

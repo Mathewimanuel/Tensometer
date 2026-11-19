@@ -25,17 +25,18 @@ OUT = Path(__file__).parent
 
 # ---------------------------------------------------------------- switch
 # Mini roller-lever microswitch (SS-5GL / KW10 size), measured by Mathew 2026-11-19.
-# All heights are measured from the body's terminal side (the face opposite the lever).
+# FREE_TOP / PRESSED_TOP are measured from the tips of the terminal pins to the roller top.
 SW_L = 19.81            # body length (X), measured
 SW_T = 6.07             # body thickness (Y, the face the screws go through), measured
 SW_HOLE_D = 2.55        # mounting hole diameter, measured -> M2 screws
-FREE_TOP = 24.36        # roller top above the terminal face, lever free, measured
-PRESSED_TOP = 19.81     # roller top above the terminal face, fully pressed, measured
+FREE_TOP = 24.36        # pin tips -> roller top, lever free, measured
+PRESSED_TOP = 19.81     # pin tips -> roller top, fully pressed, measured
+PIN_L = 4.0             # TODO(verify): terminal pin length below the body (photo estimate)
 SW_H = 10.2             # TODO(verify): body height (terminal face to lever face); typical value
-SW_HOLE_PITCH = 9.5     # TODO(verify): hole centre spacing; typical for this size, measure it
+SW_HOLE_PITCH = 10.0    # hole centre spacing, measured
 SW_HOLE_Z = 3.0         # TODO(verify): hole centres above the terminal face; the +/-5 mm slots absorb it
 ROLLER_R, ROLLER_W = 2.4, 3.0   # TODO(verify): roller radius and width (cosmetic)
-ROLLER_FREE_Z = FREE_TOP - SW_H - ROLLER_R   # roller centre above the body top, lever free
+ROLLER_FREE_Z = FREE_TOP - PIN_L - SW_H - ROLLER_R   # roller centre above the body top, lever free
 
 # ---------------------------------------------------------------- frame interface
 EXTR_Y = -20.0          # -Y side face of the 4040
@@ -54,14 +55,15 @@ INTERFERENCE = 2.5      # how far the block underside presses the roller from fr
 # ---------------------------------------------------------------- bracket
 PL_T = 6.0              # plate thickness (Y)
 PL_L = 40.0             # plate length (X)
-PL_Z0, PL_Z1 = -32.0, 20.0   # plate top 7.9 mm under the strike face
+PL_Z0, PL_Z1 = -32.0, 23.0   # plate top 4.9 mm under the strike face
 M6_D, M6_ADJ = 6.6, 10.0   # T-nut slots: O6.6, 10 mm long along X
 NUT_AF, NUT_DEPTH = 4.0, 2.0   # M2 hex nut across flats (1.6 thick), track depth into the plate
 M6_DX = 12.0               # two T-nut slots at +/-12 from the plate centre
 PL_DX = -4.0               # plate centre offset from the switch centre (keeps LIM_FAR 7 mm off BK10)
 M3_D, M3_ADJ = 2.4, 10.0   # switch slots: O2.4 (M2 clearance), 10 mm long along Z (+/-5)
 
-body_bottom_z = STRIKE_Z + INTERFERENCE - FREE_TOP
+pin_tip_z = STRIKE_Z + INTERFERENCE - FREE_TOP
+body_bottom_z = pin_tip_z + PIN_L
 
 
 def _slot_y(x0, z0, length, d, along):
@@ -107,6 +109,8 @@ def switch(cx):
     ang = math.degrees(math.atan2(rz - top, rx - hx))
     lever = Pos(hx, yc, top) * Rot(0, -ang, 0) * Box(length, 3.0, 0.6, align=(Align.MIN, Align.CENTER, Align.CENTER))
     roller = Pos(rx, yc, rz) * Rot(90, 0, 0) * Cylinder(ROLLER_R, ROLLER_W)
+    for px in (-SW_L / 2 + 2.5, 0.0, SW_L / 2 - 2.5):
+        body += Pos(cx + px, yc, body_bottom_z) * Box(3.0, 0.5, PIN_L, align=(Align.CENTER, Align.CENTER, Align.MAX))
     return body, lever + roller, rx
 
 
@@ -131,6 +135,6 @@ for name, cx in (("lim_near", near_cx), ("lim_far", far_cx)):
     export_step(Compound([body, lever]), OUT / f"{name}_switch_placeholder.step")
 
 if __name__ == "__main__":
-    print(f"body bottom z = {body_bottom_z:.2f}, top z = {body_bottom_z + SW_H:.2f}")
+    print(f"pin tips z = {pin_tip_z:.2f}, body bottom z = {body_bottom_z:.2f}, top z = {body_bottom_z + SW_H:.2f}")
     print(f"LIM_NEAR bracket x {near_cx + PL_DX - PL_L/2:.1f}..{near_cx + PL_DX + PL_L/2:.1f}, roller x {near_rx:.1f}")
     print(f"LIM_FAR  bracket x {far_cx + PL_DX - PL_L/2:.1f}..{far_cx + PL_DX + PL_L/2:.1f}, roller x {far_rx:.1f}")
