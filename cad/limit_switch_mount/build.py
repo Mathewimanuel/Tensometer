@@ -23,37 +23,45 @@ from build123d import Align, Box, Compound, Cylinder, Pos, Rot, export_step, exp
 
 OUT = Path(__file__).parent
 
-# ---------------------------------------------------------------- switch (placeholder)
-# TODO(verify): every value in this block is a typical KW12-3 roller-lever figure, not a
-# measurement of Mathew's switch. Measure the real part and update; the slots below give
-# +/-3 mm of height adjustment and +/-5 mm along X to absorb the difference.
-SW_L, SW_H, SW_T = 27.8, 15.9, 10.3       # body length (X), height (Z), thickness (Y)
-SW_HOLE_D, SW_HOLE_PITCH = 3.1, 22.2       # 2x M3 through the body
-SW_HOLE_Z = 5.1                            # hole centre above the body bottom
-ROLLER_R, ROLLER_W = 2.4, 4.8              # roller radius and width
-ROLLER_FREE_Z = 11.0                       # roller centre above the body top, lever free
+# ---------------------------------------------------------------- switch
+# Mini roller-lever microswitch (SS-5GL / KW10 size), measured by Mathew 2026-11-19.
+# All heights are measured from the body's terminal side (the face opposite the lever).
+SW_L = 19.81            # body length (X), measured
+SW_T = 6.07             # body thickness (Y, the face the screws go through), measured
+SW_HOLE_D = 2.55        # mounting hole diameter, measured -> M2 screws
+FREE_TOP = 24.36        # roller top above the terminal face, lever free, measured
+PRESSED_TOP = 19.81     # roller top above the terminal face, fully pressed, measured
+SW_H = 10.2             # TODO(verify): body height (terminal face to lever face); typical value
+SW_HOLE_PITCH = 9.5     # TODO(verify): hole centre spacing; typical for this size, measure it
+SW_HOLE_Z = 3.0         # TODO(verify): hole centres above the terminal face; the +/-5 mm slots absorb it
+ROLLER_R, ROLLER_W = 2.4, 3.0   # TODO(verify): roller radius and width (cosmetic)
+ROLLER_FREE_Z = FREE_TOP - SW_H - ROLLER_R   # roller centre above the body top, lever free
 
 # ---------------------------------------------------------------- frame interface
 EXTR_Y = -20.0          # -Y side face of the 4040
 SLOT_Z = -20.0          # side slot centre (same as the other blocks' M6 side holes)
-STRIKE_Z = 25.0         # underside of the moving block above the extrusion top.
-                        # Read from Mathew's ruler photo 2026-11-19 (about 25 mm at the main
-                        # underside, about 21 mm at the chamfered end lip; +/-2 mm parallax).
-                        # The v3e CAD has 28 (provisional carriage height).
-                        # TODO(verify): measure extrusion top -> block underside with calipers
-INTERFERENCE = 1.3      # roller top this far above STRIKE_Z with the lever free
-                        # TODO(verify): must be less than the switch's pre-travel + overtravel
+STRIKE_Z = 27.89        # extrusion top -> underside of the moving block, calipers, Mathew
+                        # 2026-11-19 (matches HGH15CA H = 28 and the v3e CAD). Replaces the 25 mm
+                        # ruler-photo estimate, which parallax made about 3 mm low.
+                        # TODO(verify): confirm the underside is this height at the block's
+                        # outer edge (where the roller is), not only over the carriage.
+TOTAL_TRAVEL = FREE_TOP - PRESSED_TOP   # 4.55 mm
+INTERFERENCE = 2.5      # how far the block underside presses the roller from free: inside the
+                        # 4.55 mm total travel with 2 mm spare.
+                        # TODO(verify): must be past the switch's click point; set at install
+                        # with the slots (listen for the click, then go about 0.5 mm further).
 
 # ---------------------------------------------------------------- bracket
 PL_T = 6.0              # plate thickness (Y)
 PL_L = 40.0             # plate length (X)
-PL_Z0, PL_Z1 = -32.0, 16.0   # top kept well under the ~21 mm end lip of the real block
+PL_Z0, PL_Z1 = -32.0, 20.0   # plate top 7.9 mm under the strike face
 M6_D, M6_ADJ = 6.6, 10.0   # T-nut slots: O6.6, 10 mm long along X
-NUT_AF, NUT_DEPTH = 5.5, 2.7   # M3 hex nut across flats, track depth into the 6 mm plate
+NUT_AF, NUT_DEPTH = 4.0, 2.0   # M2 hex nut across flats (1.6 thick), track depth into the plate
 M6_DX = 12.0               # two T-nut slots at +/-12 from the plate centre
-M3_D, M3_ADJ = 3.4, 10.0   # switch slots: O3.4, 10 mm long along Z (+/-5, covers 21..29 mm strikers)
+PL_DX = -4.0               # plate centre offset from the switch centre (keeps LIM_FAR 7 mm off BK10)
+M3_D, M3_ADJ = 2.4, 10.0   # switch slots: O2.4 (M2 clearance), 10 mm long along Z (+/-5)
 
-body_bottom_z = STRIKE_Z + INTERFERENCE - ROLLER_R - ROLLER_FREE_Z - SW_H
+body_bottom_z = STRIKE_Z + INTERFERENCE - FREE_TOP
 
 
 def _slot_y(x0, z0, length, d, along):
@@ -69,9 +77,10 @@ def _slot_y(x0, z0, length, d, along):
 
 def bracket(cx):
     """Bracket centred at x = cx. Back face on the extrusion side face (y = -20)."""
-    b = Pos(cx, EXTR_Y, PL_Z0) * Box(PL_L, PL_T, PL_Z1 - PL_Z0, align=(Align.CENTER, Align.MAX, Align.MIN))
+    pc = cx + PL_DX
+    b = Pos(pc, EXTR_Y, PL_Z0) * Box(PL_L, PL_T, PL_Z1 - PL_Z0, align=(Align.CENTER, Align.MAX, Align.MIN))
     for dx in (-M6_DX, M6_DX):
-        b -= _slot_y(cx + dx, SLOT_Z, M6_ADJ + M6_D, M6_D, "x")
+        b -= _slot_y(pc + dx, SLOT_Z, M6_ADJ + M6_D, M6_D, "x")
     z_hole = body_bottom_z + SW_HOLE_Z
     for dx in (-SW_HOLE_PITCH / 2, SW_HOLE_PITCH / 2):
         b -= _slot_y(cx + dx, z_hole, M3_ADJ + M3_D, M3_D, "z")
@@ -123,5 +132,5 @@ for name, cx in (("lim_near", near_cx), ("lim_far", far_cx)):
 
 if __name__ == "__main__":
     print(f"body bottom z = {body_bottom_z:.2f}, top z = {body_bottom_z + SW_H:.2f}")
-    print(f"LIM_NEAR bracket x {near_cx - PL_L/2:.1f}..{near_cx + PL_L/2:.1f}, roller x {near_rx:.1f}")
-    print(f"LIM_FAR  bracket x {far_cx - PL_L/2:.1f}..{far_cx + PL_L/2:.1f}, roller x {far_rx:.1f}")
+    print(f"LIM_NEAR bracket x {near_cx + PL_DX - PL_L/2:.1f}..{near_cx + PL_DX + PL_L/2:.1f}, roller x {near_rx:.1f}")
+    print(f"LIM_FAR  bracket x {far_cx + PL_DX - PL_L/2:.1f}..{far_cx + PL_DX + PL_L/2:.1f}, roller x {far_rx:.1f}")
