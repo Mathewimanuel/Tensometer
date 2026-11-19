@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import dataclasses
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
@@ -123,11 +124,15 @@ class TestLogger:
 
         self._metadata_path.write_text(json.dumps(dataclasses.asdict(metadata), indent=2))
 
-        self._telemetry_file = self._telemetry_path.open("w", newline="", encoding="utf-8")
+        # buffering=1: each row reaches the OS as it is written, so a crash loses at most
+        # the row in progress, not the ~8 kB buffer holding the break event.
+        self._telemetry_file = self._telemetry_path.open(
+            "w", buffering=1, newline="", encoding="utf-8"
+        )
         self._telemetry_writer = csv.DictWriter(self._telemetry_file, fieldnames=TELEMETRY_FIELDS)
         self._telemetry_writer.writeheader()
 
-        self._events_file = self._events_path.open("w", newline="", encoding="utf-8")
+        self._events_file = self._events_path.open("w", buffering=1, newline="", encoding="utf-8")
         self._events_writer = csv.DictWriter(self._events_file, fieldnames=EVENT_FIELDS)
         self._events_writer.writeheader()
 
@@ -159,6 +164,15 @@ def _str_to_bool(value: str) -> bool:
     return value == "True"
 
 
+def _complete_rows(f) -> Iterator[dict[str, str]]:
+    """Skips a row cut short by a crash mid-write (DictReader pads missing fields with
+    None, a partial field reads as '') so one bad last line can't make the whole test
+    unloadable."""
+    for row in csv.DictReader(f):
+        if None not in row.values() and "" not in row.values():
+            yield row
+
+
 def load_telemetry(path: Path | str) -> list[TelemetryRow]:
     with Path(path).open(newline="", encoding="utf-8") as f:
         return [
@@ -174,7 +188,7 @@ def load_telemetry(path: Path | str) -> list[TelemetryRow]:
                 homed=_str_to_bool(row["homed"]),
                 coupler_confirmed=_str_to_bool(row["coupler_confirmed"]),
             )
-            for row in csv.DictReader(f)
+            for row in _complete_rows(f)
         ]
 
 
@@ -188,7 +202,7 @@ def load_events(path: Path | str) -> list[EventRow]:
                 position_mm=float(row["position_mm"]),
                 force_mN=int(row["force_mN"]),
             )
-            for row in csv.DictReader(f)
+            for row in _complete_rows(f)
         ]
 
 

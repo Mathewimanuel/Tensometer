@@ -184,6 +184,9 @@ class Session:
             else:
                 events.append(Connected(hello=hello))
                 self._connected = True
+                # Start the heartbeat clock at HELLO, so firmware that hangs right after
+                # it still produces HeartbeatLost instead of "CONNECTING..." forever.
+                self._last_rx_heartbeat = now
 
         elif f.msg_id == int(proto.MsgId.ACK):
             ack = messages.decode_ack(f.body)

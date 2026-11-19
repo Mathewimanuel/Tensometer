@@ -254,3 +254,10 @@ def test_hello_with_other_protocol_version_does_not_connect():
     events = s.feed_frame(f, now=0.0)
     assert s.connected is False
     assert len(events) == 1 and isinstance(events[0], sess.ProtocolMismatch)
+
+
+def test_heartbeat_lost_fires_even_if_no_heartbeat_ever_arrived():
+    s = sess.Session()
+    s.feed_frame(_hello_frame(), now=0.0)  # HELLO, then the firmware hangs
+    events = s.tick(now=sess.HEARTBEAT_TIMEOUT_S + 0.5)
+    assert any(isinstance(e, sess.HeartbeatLost) for e in events)

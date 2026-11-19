@@ -115,3 +115,20 @@ def test_logger_refuses_to_overwrite_an_existing_test(tmp_path):
 def test_discard_removes_all_three_files(tmp_path):
     datalog.TestLogger(tmp_path, "aborted", _metadata("aborted")).discard()
     assert list(tmp_path.iterdir()) == []
+
+
+def test_truncated_last_row_is_skipped_not_fatal(tmp_path):
+    with datalog.TestLogger(tmp_path, "crash", _metadata("crash")) as logger:
+        logger.log_telemetry(_telemetry_body())
+        logger.log_telemetry(_telemetry_body())
+    path = tmp_path / "crash_telemetry.csv"
+    with path.open("a", newline="", encoding="utf-8") as f:
+        f.write("1234,5,")  # a row cut off mid-write
+    assert len(datalog.load_telemetry(path)) == 2
+
+
+def test_rows_reach_disk_without_close(tmp_path):
+    logger = datalog.TestLogger(tmp_path, "live", _metadata("live"))
+    logger.log_telemetry(_telemetry_body())
+    assert len(datalog.load_telemetry(tmp_path / "live_telemetry.csv")) == 1  # not buffered
+    logger.close()

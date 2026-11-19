@@ -12,7 +12,6 @@ visible benefit and risks UI stutter on a long test (same entry).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 import pyqtgraph as pg
@@ -24,14 +23,6 @@ from ..wire import protocol as proto
 _REDRAW_INTERVAL_MS = 33  # ~30 fps
 
 
-@dataclass
-class _Sample:
-    time_s: float
-    position_mm: float
-    force_raw_N: float
-    force_filtered_N: float
-
-
 class LivePlotWidget(pg.PlotWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -39,13 +30,21 @@ class LivePlotWidget(pg.PlotWidget):
         self.setLabel("bottom", "Position", units="mm")
         self.showGrid(x=True, y=True, alpha=0.3)
 
-        self._samples: list[_Sample] = []
+        # Four parallel lists, not a list of sample objects: _redraw() hands them to
+        # setData() as-is instead of walking a million objects per tick.
+        # shortcut: setData still copies O(n) per redraw; switch to a windowed/ring
+        # store if a multi-hour run visibly drags the GUI.
+        self._time_s: list[float] = []
+        self._position_mm: list[float] = []
+        self._force_raw_N: list[float] = []
+        self._force_filtered_N: list[float] = []
         self._x_mode: Literal["position", "time"] = "position"
         self._show_raw = False
         self._t0_s: float | None = None
         self._dirty = False
 
         self._curve = self.plot(pen=pg.mkPen(width=2))
+        self._curve.setDownsampling(auto=True, method="peak")  # 80 Hz x hours stays drawable
         self._cutoff_line: pg.InfiniteLine | None = None
         self._force_limit_line: pg.InfiniteLine | None = None
         self._event_markers: list[pg.TextItem] = []
@@ -59,7 +58,10 @@ class LivePlotWidget(pg.PlotWidget):
         self._timer.start(_REDRAW_INTERVAL_MS)
 
     def clear_data(self) -> None:
-        self._samples.clear()
+        self._time_s.clear()
+        self._position_mm.clear()
+        self._force_raw_N.clear()
+        self._force_filtered_N.clear()
         self._t0_s = None
         for item in self._event_markers:
             self.removeItem(item)
@@ -110,14 +112,10 @@ class LivePlotWidget(pg.PlotWidget):
         time_s = body.timestamp_us / 1_000_000
         if self._t0_s is None:
             self._t0_s = time_s
-        self._samples.append(
-            _Sample(
-                time_s=time_s - self._t0_s,
-                position_mm=units.steps_to_mm(body.position_steps),
-                force_raw_N=units.mN_to_n(body.force_raw_mN),
-                force_filtered_N=units.mN_to_n(body.force_filtered_mN),
-            )
-        )
+        self._time_s.append(time_s - self._t0_s)
+        self._position_mm.append(units.steps_to_mm(body.position_steps))
+        self._force_raw_N.append(units.mN_to_n(body.force_raw_mN))
+        self._force_filtered_N.append(units.mN_to_n(body.force_filtered_mN))
         self._dirty = True
 
     def add_event(self, body: proto.EventBody) -> None:
@@ -136,7 +134,7 @@ class LivePlotWidget(pg.PlotWidget):
         self._event_scatter.setData(self._event_xs, self._event_ys)
 
     def sample_count(self) -> int:
-        return len(self._samples)
+        return len(self._time_s)
 
     def force_redraw(self) -> None:
         """Draws immediately instead of waiting for the next throttled timer tick --
@@ -146,17 +144,9 @@ class LivePlotWidget(pg.PlotWidget):
         self._redraw()
 
     def _redraw(self) -> None:
-        if not self._dirty or not self._samples:
+        if not self._dirty or not self._time_s:
             return
-        xs = (
-            [s.position_mm for s in self._samples]
-            if self._x_mode == "position"
-            else [s.time_s for s in self._samples]
-        )
-        ys = (
-            [s.force_raw_N for s in self._samples]
-            if self._show_raw
-            else [s.force_filtered_N for s in self._samples]
-        )
+        xs = self._position_mm if self._x_mode == "position" else self._time_s
+        ys = self._force_raw_N if self._show_raw else self._force_filtered_N
         self._curve.setData(xs, ys)
         self._dirty = False

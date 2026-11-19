@@ -75,3 +75,16 @@ def test_redraw_current_loop_does_not_crash_with_no_data(qtbot):
     widget = CyclePlotWidget()
     qtbot.addWidget(widget)
     widget._redraw_current_loop()  # no-op, must not raise
+
+
+def test_finished_loop_curves_are_bounded(qtbot):
+    from tensometer.gui.cycle_plot import _MAX_FINISHED_LOOPS
+
+    widget = CyclePlotWidget()
+    qtbot.addWidget(widget)
+    for cycle in range(_MAX_FINISHED_LOOPS + 20):
+        widget.add_telemetry(_telemetry(0, 1_000, cycle_index=cycle))
+        widget.add_telemetry(_telemetry(10_000, 2_000, cycle_index=cycle))
+    assert widget.loop_count() == _MAX_FINISHED_LOOPS + 19  # trend keeps every cycle
+    # Finished curves plus at most one live curve are all that is drawn.
+    assert len(widget._loop_plot.listDataItems()) <= _MAX_FINISHED_LOOPS + 1
