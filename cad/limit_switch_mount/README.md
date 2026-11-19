@@ -40,8 +40,9 @@ of the BK10 block (x = 655).
 
 Every bracket and switch body against every v3e solid, with the moving group (carriages,
 clamp block, jaws, cell, studs, nut plate, ball nut) at 0, +320, +334.76 (rail end) and
--48 mm: **no collisions**. The only overlap is the free-position lever with its own striker
-at and beyond the trip point. That is the lever being pressed, as intended.
+-48 mm: **no collisions**. With the CAD's 28 mm strike height, the lever never touches the
+CAD blocks. On the real machine (about 25 mm) the roller is pressed about 1.3 mm at the trip point,
+which is the intended actuation.
 
 ## Not verified (TODO)
 
