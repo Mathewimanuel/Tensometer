@@ -245,3 +245,12 @@ def test_unknown_message_id_reported_not_raised():
     assert len(events) == 1
     assert isinstance(events[0], sess.UnknownMessage)
     assert events[0].msg_id == 0x7F
+
+
+def test_hello_with_other_protocol_version_does_not_connect():
+    body = proto.HelloBody(proto.VERSION_MAJOR, proto.VERSION_MINOR + 1, 1, proto.CAP_CORE, 0, 1)
+    f = wire_frame.Frame(msg_id=int(proto.MsgId.HELLO), seq=0, body=messages.encode_hello(body))
+    s = sess.Session()
+    events = s.feed_frame(f, now=0.0)
+    assert s.connected is False
+    assert len(events) == 1 and isinstance(events[0], sess.ProtocolMismatch)

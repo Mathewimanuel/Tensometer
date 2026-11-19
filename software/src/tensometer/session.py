@@ -34,6 +34,16 @@ class Connected:
 
 
 @dataclass(frozen=True, slots=True)
+class ProtocolMismatch:
+    """HELLO arrived with a protocol version other than this app's; the session stays
+    not-connected. Exact match is required (decided 2026-11-19): minor bumps in this
+    repo have changed message meaning (0.5 ARM length, 0.7 JOG), so "same major" is
+    not enough."""
+
+    hello: proto.HelloBody
+
+
+@dataclass(frozen=True, slots=True)
 class CommandAcked:
     seq: int
     msg_id: int
@@ -88,6 +98,7 @@ class UnknownMessage:
 
 SessionEvent = (
     Connected
+    | ProtocolMismatch
     | CommandAcked
     | CommandNacked
     | CommandTimedOut
@@ -164,8 +175,15 @@ class Session:
         events: list[SessionEvent] = []
 
         if f.msg_id == int(proto.MsgId.HELLO):
-            events.append(Connected(hello=messages.decode_hello(f.body)))
-            self._connected = True
+            hello = messages.decode_hello(f.body)
+            if (hello.version_major, hello.version_minor) != (
+                proto.VERSION_MAJOR,
+                proto.VERSION_MINOR,
+            ):
+                events.append(ProtocolMismatch(hello=hello))
+            else:
+                events.append(Connected(hello=hello))
+                self._connected = True
 
         elif f.msg_id == int(proto.MsgId.ACK):
             ack = messages.decode_ack(f.body)

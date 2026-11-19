@@ -338,6 +338,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_telemetry(event.body)
         elif isinstance(event, sess.EventReceived):
             self._on_test_event(event.body)
+        elif isinstance(event, sess.ProtocolMismatch):
+            fw = (event.hello.version_major, event.hello.version_minor)
+            app = (proto.VERSION_MAJOR, proto.VERSION_MINOR)
+            fix = (
+                "Update this app: git pull, then `pip install -e .` in software/."
+                if fw > app
+                else "Flash the firmware from the same commit as this app (firmware/)."
+            )
+            self._on_transport_error(
+                TransportError(
+                    message=f"Protocol mismatch: firmware speaks {fw[0]}.{fw[1]}, "
+                    f"this app speaks {app[0]}.{app[1]}. {fix}"
+                )
+            )
         elif isinstance(event, TransportError):
             self._on_transport_error(event)
 

@@ -357,3 +357,21 @@ def test_arm_is_not_sent_when_the_log_cannot_be_opened(qtbot, tmp_path, monkeypa
 
     assert window._controller.armed_with == []
     assert window._logger is None
+
+
+def test_protocol_mismatch_shows_which_side_to_update_and_disconnects(qtbot, monkeypatch):
+    shown = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "critical", lambda *args, **kwargs: shown.append(args)
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._controller = _FakeController(connected=True)
+
+    newer_fw = proto.HelloBody(proto.VERSION_MAJOR, proto.VERSION_MINOR + 1, 1, proto.CAP_CORE, 0, 1)
+    window._on_event(sess.ProtocolMismatch(hello=newer_fw))
+
+    assert len(shown) == 1
+    assert "Update this app" in shown[0][2]
+    assert window._controller is None
+    assert window.connect_button.text() == "Connect"
