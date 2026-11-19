@@ -19,8 +19,9 @@ bracket design, printed twice, for Mathew's mini roller-lever microswitch (SS-5G
   long vertically (±5 mm height adjustment). The M2 nuts slide into hex tracks on the back face
   from the top edge, so they are still through-bolts, with no inserts.
 - **Heights:**
-  - Strike face: 27.89 mm above the extrusion top, measured with calipers (matches HGH15CA
-    H = 28 and the CAD).
+  - Strike face: about 27 mm above the extrusion top where the roller runs, about 9 mm
+    outside the extrusion. It is 27.89 mm over the carriage (calipers; matches HGH15CA
+    H = 28 and the CAD). The design uses 27.
   - Roller, lever free: 24.36 mm above the terminal pin tips. Fully pressed: 19.81 mm, so
     4.55 mm of total travel.
   - The block presses the roller **2.5 mm**, leaving 2 mm before it bottoms out.
@@ -61,9 +62,6 @@ Still TODO(verify):
 - Body height (10.2 mm assumed, cosmetic) and roller size (cosmetic).
 - The switch's click point within its 4.55 mm travel. It has to come before the 2.5 mm press;
   set it at install.
-- **Strike height at the block's outer edge.** 27.89 mm is the underside over the carriage. If
-  the printed block is lower at its outer edge, where the roller runs, the press grows by the
-  same amount. Up to 2 mm lower is safe; more than that, move the switch down in its slots.
 - 4040 slot width (only changes the T-nut).
 - Trip points are proposals: firmware soft limits should sit inside them.
 - Wiring: NC contact (C to NC) to GND, as the controller board expects (J4/J5).

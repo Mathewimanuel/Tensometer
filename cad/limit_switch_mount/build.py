@@ -41,11 +41,9 @@ ROLLER_FREE_Z = FREE_TOP - PIN_L - SW_H - ROLLER_R   # roller centre above the b
 # ---------------------------------------------------------------- frame interface
 EXTR_Y = -20.0          # -Y side face of the 4040
 SLOT_Z = -20.0          # side slot centre (same as the other blocks' M6 side holes)
-STRIKE_Z = 27.89        # extrusion top -> underside of the moving block, calipers, Mathew
-                        # 2026-11-19 (matches HGH15CA H = 28 and the v3e CAD). Replaces the 25 mm
-                        # ruler-photo estimate, which parallax made about 3 mm low.
-                        # TODO(verify): confirm the underside is this height at the block's
-                        # outer edge (where the roller is), not only over the carriage.
+STRIKE_Z = 27.0         # extrusion top -> block underside at the roller's spot (about 9 mm outside the
+                        # extrusion side face), Mathew 2026-11-19: "around 27". Over the carriage it
+                        # is 27.89 (calipers; matches HGH15CA H = 28 and the v3e CAD).
 TOTAL_TRAVEL = FREE_TOP - PRESSED_TOP   # 4.55 mm
 INTERFERENCE = 2.5      # how far the block underside presses the roller from free: inside the
                         # 4.55 mm total travel with 2 mm spare.
