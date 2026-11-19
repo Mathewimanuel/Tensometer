@@ -2,6 +2,13 @@
 
 Newest first. Each entry: date, decision, reason, status. Anything marked PROPOSED is not approved; ask Mathew before acting on it. Covers both `firmware/` and `software/` (renamed from "Firmware decisions log" 2026-11-13 once the PC app got its own directory below).
 
+## 2026-11-19
+
+### Relief after a limit FAULT: STOP while already in FAULT does not cancel it (DECIDED)
+Mathew: a CMD_STOP received while already sitting in a limit FAULT (no jog running) leaves the relieving-jog permission as it is. Matches the code as committed in 68696f5 (`Dispatcher` only blocks relief for a STOP that *enters* FAULT or arrives during a relieving jog, per the 2026-11-16 round 5/6 decisions). No change.
+
+Still open from the audit, awaiting Mathew: wire EventTypes for the five unreported fault causes (deferred by Mathew); HELLO protocol-version check rule (Mathew asked for the trade-offs first, given below in chat on 2026-11-19); whether firmware needs an unhomed relieving jog so a loaded specimen can be slackened before unclamping after an e-stop. #19 is Mathew's controller PCB work (reviewed by him, drawn on claude.ai); the skill's section 2.6 pin map and 2.7 electronics list are the contract it must match, and #18's pull resistors belong on it.
+
 ## 2026-11-16
 
 ### `software/`: four audit fixes (reader thread, log overwrite, ARM-before-logger, wrong L0)
