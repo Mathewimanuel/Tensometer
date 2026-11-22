@@ -100,7 +100,9 @@ public:
                             Event* out, uint8_t out_cap);
 
     int32_t test_max_mN() const { return test_max_mN_; }
-    int64_t energy_raw() const { return energy_raw_; }  // mN * position-unit, trapezoid sum
+    // mN * position-unit, trapezoid sum over extending stretches. Single-pull figure only:
+    // undefined in CYCLE mode, per-cycle energies belong on the PC (decisions.md 2026-11-22).
+    int64_t energy_raw() const { return energy_raw_; }
     bool broken() const { return broken_; }
 
 private:
