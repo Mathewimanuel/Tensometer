@@ -28,7 +28,7 @@ cd software
 pip install -e ".[dev]"
 pytest -v
 tensometer-sim                          # serves a fake Teensy on a TCP socket
-python -m tensometer.gui.app            # then connect to socket://localhost:<port>
+python -m tensometer.gui.app            # then connect to socket://127.0.0.1:9000
 ```
 
 CI runs both: `.github/workflows/firmware.yml` (hook self-test, cppcheck, native tests, both Teensy builds with `-Werror`, memory budget) and `.github/workflows/software.yml` (ruff, pytest).
